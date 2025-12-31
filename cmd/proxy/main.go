@@ -1,4 +1,15 @@
 // Package main provides the entry point for the ContextForge proxy sidecar.
+//
+// Logging Architecture:
+// The proxy uses zerolog for structured logging because:
+// - It provides high-performance, zero-allocation JSON logging ideal for the data path
+// - It supports both human-readable (console) and machine-parseable (JSON) output
+// - It has minimal overhead which is critical for a sidecar that handles every request
+//
+// The operator (cmd/main.go) uses controller-runtime's logf package because:
+// - It integrates seamlessly with the Kubernetes controller-runtime framework
+// - It follows Kubernetes community conventions and patterns
+// - It provides context-aware logging that works with reconcile loops
 package main
 
 import (
@@ -30,7 +41,10 @@ func main() {
 		Int("port", cfg.ProxyPort).
 		Msg("Starting ContextForge proxy")
 
-	proxyHandler := handler.NewProxyHandler(cfg)
+	proxyHandler, err := handler.NewProxyHandler(cfg)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to create proxy handler")
+	}
 	srv := server.NewServer(cfg, proxyHandler)
 
 	go func() {

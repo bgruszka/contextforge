@@ -3,12 +3,15 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/bgruszka/contextforge/internal/config"
+	"github.com/bgruszka/contextforge/internal/metrics"
 	"github.com/rs/zerolog/log"
 )
 
@@ -27,10 +30,11 @@ type ProxyHandler struct {
 }
 
 // NewProxyHandler creates a new ProxyHandler with the given configuration.
-func NewProxyHandler(cfg *config.ProxyConfig) *ProxyHandler {
+// Returns an error if the target host URL is invalid.
+func NewProxyHandler(cfg *config.ProxyConfig) (*ProxyHandler, error) {
 	targetURL, err := url.Parse("http://" + cfg.TargetHost)
 	if err != nil {
-		log.Fatal().Err(err).Str("target", cfg.TargetHost).Msg("Failed to parse target host URL")
+		return nil, fmt.Errorf("failed to parse target host URL %q: %w", cfg.TargetHost, err)
 	}
 
 	transport := NewHeaderPropagatingTransport(cfg.HeadersToPropagate, http.DefaultTransport)
@@ -56,13 +60,22 @@ func NewProxyHandler(cfg *config.ProxyConfig) *ProxyHandler {
 		config:       cfg,
 		reverseProxy: proxy,
 		headers:      cfg.HeadersToPropagate,
-	}
+	}, nil
 }
 
 // ServeHTTP implements the http.Handler interface.
 // It extracts configured headers, stores them in context, and forwards to the target.
 func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	metrics.ActiveConnections.Inc()
+	defer metrics.ActiveConnections.Dec()
+
 	headerMap := h.extractHeaders(r)
+
+	// Record propagated headers metric
+	if len(headerMap) > 0 {
+		metrics.RecordHeadersPropagated(len(headerMap))
+	}
 
 	ctx := context.WithValue(r.Context(), ContextKeyHeaders, headerMap)
 	r = r.WithContext(ctx)
@@ -76,7 +89,13 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Msg("Proxying request")
 	}
 
-	h.reverseProxy.ServeHTTP(w, r)
+	// Wrap response writer to capture status code
+	rw := metrics.NewResponseWriter(w)
+	h.reverseProxy.ServeHTTP(rw, r)
+
+	// Record request metrics
+	duration := time.Since(start)
+	metrics.RecordRequest(r.Method, rw.StatusCode, duration)
 }
 
 // extractHeaders extracts the configured headers from the incoming request.

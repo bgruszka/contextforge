@@ -6,39 +6,65 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/bgruszka/contextforge/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewProxyHandler(t *testing.T) {
-	cfg := &config.ProxyConfig{
-		HeadersToPropagate: []string{"x-request-id", "x-dev-id"},
-		TargetHost:         "localhost:8080",
+// testConfig creates a valid test configuration with all required fields
+func testConfig(targetHost string, headers []string) *config.ProxyConfig {
+	return &config.ProxyConfig{
+		HeadersToPropagate: headers,
+		TargetHost:         targetHost,
 		ProxyPort:          9090,
 		LogLevel:           "info",
 		MetricsPort:        9091,
+		ReadTimeout:        15 * time.Second,
+		WriteTimeout:       15 * time.Second,
+		IdleTimeout:        60 * time.Second,
+		ReadHeaderTimeout:  5 * time.Second,
+		TargetDialTimeout:  2 * time.Second,
 	}
+}
 
-	handler := NewProxyHandler(cfg)
+func TestNewProxyHandler(t *testing.T) {
+	cfg := testConfig("localhost:8080", []string{"x-request-id", "x-dev-id"})
 
+	handler, err := NewProxyHandler(cfg)
+
+	require.NoError(t, err)
 	assert.NotNil(t, handler)
 	assert.Equal(t, cfg, handler.config)
 	assert.NotNil(t, handler.reverseProxy)
 	assert.Equal(t, []string{"x-request-id", "x-dev-id"}, handler.headers)
 }
 
-func TestProxyHandler_ExtractHeaders(t *testing.T) {
-	cfg := &config.ProxyConfig{
-		HeadersToPropagate: []string{"x-request-id", "x-dev-id", "x-tenant-id"},
-		TargetHost:         "localhost:8080",
-		ProxyPort:          9090,
-		LogLevel:           "info",
-		MetricsPort:        9091,
+func TestNewProxyHandler_ValidTargetHost(t *testing.T) {
+	// Test that various valid host formats work
+	validHosts := []string{
+		"localhost:8080",
+		"127.0.0.1:8080",
+		"example.com:80",
+		"service.namespace.svc.cluster.local:8080",
 	}
 
-	handler := NewProxyHandler(cfg)
+	for _, host := range validHosts {
+		t.Run(host, func(t *testing.T) {
+			cfg := testConfig(host, []string{"x-request-id"})
+			handler, err := NewProxyHandler(cfg)
+			require.NoError(t, err)
+			assert.NotNil(t, handler)
+		})
+	}
+}
+
+func TestProxyHandler_ExtractHeaders(t *testing.T) {
+	cfg := testConfig("localhost:8080", []string{"x-request-id", "x-dev-id", "x-tenant-id"})
+
+	handler, err := NewProxyHandler(cfg)
+	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.Header.Set("X-Request-Id", "abc123")
@@ -55,15 +81,10 @@ func TestProxyHandler_ExtractHeaders(t *testing.T) {
 }
 
 func TestProxyHandler_ExtractHeaders_CaseInsensitive(t *testing.T) {
-	cfg := &config.ProxyConfig{
-		HeadersToPropagate: []string{"X-Request-ID"},
-		TargetHost:         "localhost:8080",
-		ProxyPort:          9090,
-		LogLevel:           "info",
-		MetricsPort:        9091,
-	}
+	cfg := testConfig("localhost:8080", []string{"X-Request-ID"})
 
-	handler := NewProxyHandler(cfg)
+	handler, err := NewProxyHandler(cfg)
+	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.Header.Set("x-request-id", "abc123")
@@ -75,15 +96,10 @@ func TestProxyHandler_ExtractHeaders_CaseInsensitive(t *testing.T) {
 }
 
 func TestProxyHandler_ExtractHeaders_EmptyHeaders(t *testing.T) {
-	cfg := &config.ProxyConfig{
-		HeadersToPropagate: []string{"x-request-id"},
-		TargetHost:         "localhost:8080",
-		ProxyPort:          9090,
-		LogLevel:           "info",
-		MetricsPort:        9091,
-	}
+	cfg := testConfig("localhost:8080", []string{"x-request-id"})
 
-	handler := NewProxyHandler(cfg)
+	handler, err := NewProxyHandler(cfg)
+	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 
@@ -102,16 +118,10 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 	defer targetServer.Close()
 
 	targetHost := targetServer.Listener.Addr().String()
+	cfg := testConfig(targetHost, []string{"x-request-id", "x-dev-id"})
 
-	cfg := &config.ProxyConfig{
-		HeadersToPropagate: []string{"x-request-id", "x-dev-id"},
-		TargetHost:         targetHost,
-		ProxyPort:          9090,
-		LogLevel:           "info",
-		MetricsPort:        9091,
-	}
-
-	handler := NewProxyHandler(cfg)
+	handler, err := NewProxyHandler(cfg)
+	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.Header.Set("X-Request-Id", "abc123")
@@ -178,16 +188,10 @@ func TestProxyHandler_HeadersPropagatedThroughProxy(t *testing.T) {
 	defer targetServer.Close()
 
 	targetHost := targetServer.Listener.Addr().String()
+	cfg := testConfig(targetHost, []string{"x-request-id", "x-correlation-id", "x-tenant-id"})
 
-	cfg := &config.ProxyConfig{
-		HeadersToPropagate: []string{"x-request-id", "x-correlation-id", "x-tenant-id"},
-		TargetHost:         targetHost,
-		ProxyPort:          9090,
-		LogLevel:           "info",
-		MetricsPort:        9091,
-	}
-
-	handler := NewProxyHandler(cfg)
+	handler, err := NewProxyHandler(cfg)
+	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", nil)
 	req.Header.Set("X-Request-Id", "req-12345")
