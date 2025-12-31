@@ -14,6 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Logging Architecture:
+// The operator uses controller-runtime's zap-based logger because:
+// - It integrates seamlessly with the Kubernetes controller-runtime framework
+// - It follows Kubernetes community conventions and patterns (structured, leveled logging)
+// - It provides context-aware logging that works naturally with reconcile loops
+// - It supports development mode for human-readable output and production mode for JSON
+//
+// The proxy (cmd/proxy/main.go) uses zerolog because:
+// - It provides zero-allocation, high-performance JSON logging ideal for the data path
+// - It has minimal overhead which is critical for a sidecar that handles every HTTP request
+// - It supports both console and JSON output formats
+//
+// This separation allows each component to use the best logging solution for its specific
+// performance and integration requirements while maintaining consistent structured logging.
+
 package main
 
 import (

@@ -68,8 +68,49 @@ That's it! Headers are now automatically propagated through your service chain.
 - **Framework Agnostic** — Works with Go, Python, Node.js, Java, Ruby, and more
 - **Kubernetes Native** — Uses standard admission webhooks and CRDs
 - **Production Ready** — Health checks, graceful shutdown, non-root containers
+- **Observable** — Prometheus metrics, structured logging, health endpoints
+- **Configurable** — Rate limiting, timeouts, and resource controls
 
 > **Note:** Header propagation works for **HTTP** traffic. HTTPS requests use CONNECT tunneling where the proxy establishes a TCP tunnel but cannot inspect encrypted headers. For internal service-to-service communication, HTTP is typically used (with mTLS handled by the service mesh if needed).
+
+## Observability
+
+### Prometheus Metrics
+
+The proxy exposes metrics at `/metrics` in Prometheus format:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `ctxforge_proxy_requests_total` | Counter | Total requests processed (labels: `method`, `status`) |
+| `ctxforge_proxy_request_duration_seconds` | Histogram | Request duration in seconds (labels: `method`) |
+| `ctxforge_proxy_headers_propagated_total` | Counter | Total headers propagated |
+| `ctxforge_proxy_active_connections` | Gauge | Current active connections |
+
+### Health Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/healthz` | Liveness probe - returns 200 if proxy is running |
+| `/ready` | Readiness probe - returns 200 if target is reachable |
+
+### Rate Limiting (Optional)
+
+Enable rate limiting to protect your services:
+
+```yaml
+annotations:
+  ctxforge.io/enabled: "true"
+  ctxforge.io/headers: "x-request-id"
+env:
+  - name: RATE_LIMIT_ENABLED
+    value: "true"
+  - name: RATE_LIMIT_RPS
+    value: "1000"      # Requests per second
+  - name: RATE_LIMIT_BURST
+    value: "100"       # Burst size
+```
+
+See [docs/configuration.md](docs/configuration.md) for full configuration reference.
 
 ## Architecture
 
@@ -234,11 +275,15 @@ contextforge/
 │   └── main.go             # Operator binary
 ├── internal/
 │   ├── config/             # Configuration loading
+│   ├── controller/         # Kubernetes controller
 │   ├── handler/            # HTTP proxy handler
+│   ├── metrics/            # Prometheus metrics
+│   ├── middleware/         # HTTP middleware (rate limiting)
 │   ├── server/             # HTTP server
 │   └── webhook/            # Admission webhook
 ├── deploy/
 │   └── helm/contextforge/  # Helm chart
+├── docs/                   # Documentation
 ├── website/                # Documentation site
 ├── tests/e2e/              # E2E tests
 ├── Dockerfile.proxy        # Proxy image
