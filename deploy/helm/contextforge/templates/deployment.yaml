@@ -37,7 +37,6 @@ spec:
             {{- end }}
             - --health-probe-bind-address=:{{ .Values.operator.healthProbe.port }}
             - --metrics-bind-address=:{{ .Values.operator.metrics.port }}
-            - --webhook-port={{ .Values.webhook.port }}
           env:
             - name: PROXY_IMAGE
               value: "{{ .Values.proxy.image.repository }}:{{ .Values.proxy.image.tag }}"
