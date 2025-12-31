@@ -1,0 +1,9 @@
+apiVersion: ctxforge.ctxforge.io/v1alpha1
+kind: HeaderPropagationPolicy
+metadata:
+  labels:
+    app.kubernetes.io/name: contextforge
+    app.kubernetes.io/managed-by: kustomize
+  name: headerpropagationpolicy-sample
+spec:
+  # TODO(user): Add fields here
