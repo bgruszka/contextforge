@@ -7,7 +7,7 @@ operator:
 
   image:
     repository: ghcr.io/bgruszka/contextforge-operator
-    tag: "latest"
+    tag: "0.1.0"
     pullPolicy: IfNotPresent
 
   imagePullSecrets: []
@@ -17,12 +17,17 @@ operator:
       cpu: 50m
       memory: 64Mi
     limits:
-      cpu: 500m
+      cpu: 200m
       memory: 256Mi
 
   nodeSelector: {}
   tolerations: []
   affinity: {}
+
+  # PodDisruptionBudget configuration
+  pdb:
+    enabled: true
+    minAvailable: 1
 
   # Leader election settings
   leaderElection:
@@ -41,16 +46,16 @@ operator:
 proxy:
   image:
     repository: ghcr.io/bgruszka/contextforge-proxy
-    tag: "latest"
+    tag: "0.1.0"
     pullPolicy: IfNotPresent
 
   resources:
     requests:
-      cpu: 10m
-      memory: 10Mi
+      cpu: 25m
+      memory: 32Mi
     limits:
-      cpu: 100m
-      memory: 50Mi
+      cpu: 200m
+      memory: 128Mi
 
   # Default port the proxy listens on
   port: 9090
