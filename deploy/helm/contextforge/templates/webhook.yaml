@@ -26,11 +26,6 @@ webhooks:
         - key: ctxforge.io/injection
           operator: NotIn
           values: ["disabled"]
-    objectSelector:
-      matchExpressions:
-        - key: ctxforge.io/enabled
-          operator: In
-          values: ["true"]
     admissionReviewVersions: ["v1"]
     sideEffects: None
     timeoutSeconds: 10
