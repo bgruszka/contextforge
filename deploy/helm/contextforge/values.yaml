@@ -1,0 +1,101 @@
+# Default values for contextforge
+
+# Operator configuration
+operator:
+  # Number of replicas
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/bgruszka/contextforge-operator
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  imagePullSecrets: []
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # Leader election settings
+  leaderElection:
+    enabled: true
+
+  # Metrics configuration
+  metrics:
+    enabled: true
+    port: 8080
+
+  # Health probe configuration
+  healthProbe:
+    port: 8081
+
+# Proxy sidecar configuration
+proxy:
+  image:
+    repository: ghcr.io/bgruszka/contextforge-proxy
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 10Mi
+    limits:
+      cpu: 100m
+      memory: 50Mi
+
+  # Default port the proxy listens on
+  port: 9090
+
+  # Default target port (application port)
+  defaultTargetPort: 8080
+
+  # Default log level
+  logLevel: info
+
+# Webhook configuration
+webhook:
+  # Port for webhook server
+  port: 9443
+
+  # Failure policy: Fail or Ignore
+  failurePolicy: Fail
+
+  # Certificate configuration
+  certManager:
+    # Set to true if cert-manager is installed
+    enabled: false
+
+  # Self-signed certificate settings (used if certManager.enabled is false)
+  selfSigned:
+    # Certificate validity in days
+    validityDays: 365
+
+# Namespace configuration
+namespace:
+  # Create the namespace
+  create: true
+  # Name of the namespace
+  name: contextforge-system
+
+# Service account configuration
+serviceAccount:
+  create: true
+  name: contextforge-operator
+  annotations: {}
+
+# RBAC configuration
+rbac:
+  create: true
+
+# CRD installation
+crds:
+  install: true

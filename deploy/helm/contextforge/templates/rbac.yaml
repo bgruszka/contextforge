@@ -1,0 +1,81 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "contextforge.fullname" . }}-manager-role
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["ctxforge.io"]
+    resources: ["headerpropagationpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["ctxforge.io"]
+    resources: ["headerpropagationpolicies/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["ctxforge.io"]
+    resources: ["headerpropagationpolicies/finalizers"]
+    verbs: ["update"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "contextforge.fullname" . }}-manager-rolebinding
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "contextforge.fullname" . }}-manager-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "contextforge.serviceAccountName" . }}
+    namespace: {{ include "contextforge.namespace" . }}
+---
+{{- if .Values.operator.leaderElection.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "contextforge.fullname" . }}-leader-election-role
+  namespace: {{ include "contextforge.namespace" . }}
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "contextforge.fullname" . }}-leader-election-rolebinding
+  namespace: {{ include "contextforge.namespace" . }}
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "contextforge.fullname" . }}-leader-election-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "contextforge.serviceAccountName" . }}
+    namespace: {{ include "contextforge.namespace" . }}
+{{- end }}
+{{- end }}

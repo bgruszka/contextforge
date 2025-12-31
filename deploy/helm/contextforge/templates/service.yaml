@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "contextforge.fullname" . }}-webhook
+  namespace: {{ include "contextforge.namespace" . }}
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+spec:
+  ports:
+    - port: 443
+      targetPort: webhook
+      protocol: TCP
+      name: webhook
+  selector:
+    {{- include "contextforge.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
