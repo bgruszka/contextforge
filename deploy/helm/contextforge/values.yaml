@@ -73,6 +73,12 @@ webhook:
   certManager:
     # Set to true if cert-manager is installed
     enabled: false
+    # Create a self-signed issuer (recommended for testing)
+    createSelfSignedIssuer: true
+    # Issuer reference for cert-manager (used if createSelfSignedIssuer is false)
+    issuerRef:
+      kind: Issuer
+      name: my-issuer
 
   # Self-signed certificate settings (used if certManager.enabled is false)
   selfSigned:

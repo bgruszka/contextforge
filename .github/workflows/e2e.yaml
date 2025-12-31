@@ -75,8 +75,7 @@ jobs:
       - name: Deploy with Helm
         run: |
           helm upgrade --install contextforge deploy/helm/contextforge \
-            --namespace ctxforge-system \
-            --create-namespace \
+            --namespace contextforge-system \
             --set operator.image.repository=contextforge-operator \
             --set operator.image.tag=e2e \
             --set operator.image.pullPolicy=Never \
@@ -90,7 +89,7 @@ jobs:
       - name: Wait for operator
         run: |
           kubectl wait --for=condition=Available deployment/contextforge-operator \
-            -n ctxforge-system \
+            -n contextforge-system \
             --timeout=120s
 
       - name: Run E2E tests
@@ -100,13 +99,20 @@ jobs:
         if: failure()
         run: |
           echo "=== Operator logs ==="
-          kubectl logs -n ctxforge-system deployment/contextforge-operator --tail=100 || true
+          kubectl logs -n contextforge-system deployment/contextforge-operator --tail=100 || true
           echo ""
           echo "=== Pod status ==="
           kubectl get pods -A || true
           echo ""
           echo "=== Events ==="
-          kubectl get events -n ctxforge-system --sort-by='.lastTimestamp' || true
+          kubectl get events -n contextforge-system --sort-by='.lastTimestamp' || true
+          echo ""
+          echo "=== Certificate status ==="
+          kubectl get certificate -n contextforge-system || true
+          kubectl describe certificate -n contextforge-system || true
+          echo ""
+          echo "=== Secrets ==="
+          kubectl get secrets -n contextforge-system || true
 
       - name: Cleanup
         if: always()
