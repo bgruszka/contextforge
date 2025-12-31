@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -45,7 +46,7 @@ const (
 	// ProxyContainerName is the name of the injected sidecar container
 	ProxyContainerName = "ctxforge-proxy"
 	// DefaultProxyImage is the default image for the proxy sidecar
-	DefaultProxyImage = "ghcr.io/bgruszka/contextforge-proxy:latest"
+	DefaultProxyImage = "ghcr.io/bgruszka/contextforge-proxy:0.1.0"
 	// DefaultTargetPort is the default port of the application container
 	DefaultTargetPort = "8080"
 	// ProxyPort is the port the proxy listens on
@@ -157,7 +158,12 @@ func (d *PodCustomDefaulter) injectSidecar(pod *corev1.Pod, headers []string) {
 	targetPort := DefaultTargetPort
 	if pod.Annotations != nil {
 		if port, ok := pod.Annotations[AnnotationTargetPort]; ok && port != "" {
-			targetPort = port
+			if err := validateTargetPort(port); err != nil {
+				podlog.Error(err, "Invalid target port annotation, using default",
+					"pod", pod.Name, "port", port, "default", DefaultTargetPort)
+			} else {
+				targetPort = port
+			}
 		}
 	}
 
@@ -196,12 +202,12 @@ func (d *PodCustomDefaulter) injectSidecar(pod *corev1.Pod, headers []string) {
 		},
 		Resources: corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("10Mi"),
-				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("32Mi"),
+				corev1.ResourceCPU:    resource.MustParse("25m"),
 			},
 			Limits: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("50Mi"),
-				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+				corev1.ResourceCPU:    resource.MustParse("200m"),
 			},
 		},
 		SecurityContext: &corev1.SecurityContext{
@@ -239,14 +245,12 @@ func (d *PodCustomDefaulter) injectSidecar(pod *corev1.Pod, headers []string) {
 }
 
 // modifyAppContainers adds HTTP_PROXY env vars to application containers
+// Note: HTTPS_PROXY is intentionally not set because the proxy only handles HTTP traffic.
+// HTTPS requests use CONNECT tunneling where encrypted headers cannot be inspected or propagated.
 func (d *PodCustomDefaulter) modifyAppContainers(pod *corev1.Pod) {
 	proxyEnvVars := []corev1.EnvVar{
 		{
 			Name:  "HTTP_PROXY",
-			Value: fmt.Sprintf("http://localhost:%d", ProxyPort),
-		},
-		{
-			Name:  "HTTPS_PROXY",
 			Value: fmt.Sprintf("http://localhost:%d", ProxyPort),
 		},
 		{
@@ -329,4 +333,19 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// validateTargetPort validates that the port is a valid port number
+func validateTargetPort(port string) error {
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		return fmt.Errorf("invalid target port %q: must be a number", port)
+	}
+	if portNum < 1 || portNum > 65535 {
+		return fmt.Errorf("invalid target port %d: must be between 1 and 65535", portNum)
+	}
+	if portNum == ProxyPort {
+		return fmt.Errorf("invalid target port %d: cannot be the same as proxy port (%d)", portNum, ProxyPort)
+	}
+	return nil
 }

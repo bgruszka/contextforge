@@ -310,15 +310,15 @@ func TestPodCustomDefaulter_ModifyAppContainers(t *testing.T) {
 			continue
 		}
 
-		var httpProxy, httpsProxy, noProxy bool
+		var httpProxy, noProxy bool
+		var hasHTTPSProxy bool
 		for _, env := range container.Env {
 			switch env.Name {
 			case "HTTP_PROXY":
 				httpProxy = true
 				assert.Equal(t, "http://localhost:9090", env.Value)
 			case "HTTPS_PROXY":
-				httpsProxy = true
-				assert.Equal(t, "http://localhost:9090", env.Value)
+				hasHTTPSProxy = true
 			case "NO_PROXY":
 				noProxy = true
 				assert.Equal(t, "localhost,127.0.0.1", env.Value)
@@ -326,7 +326,7 @@ func TestPodCustomDefaulter_ModifyAppContainers(t *testing.T) {
 		}
 
 		assert.True(t, httpProxy, "HTTP_PROXY should be set for %s", container.Name)
-		assert.True(t, httpsProxy, "HTTPS_PROXY should be set for %s", container.Name)
+		assert.False(t, hasHTTPSProxy, "HTTPS_PROXY should NOT be set (proxy only handles HTTP)")
 		assert.True(t, noProxy, "NO_PROXY should be set for %s", container.Name)
 	}
 }
@@ -408,6 +408,146 @@ func TestPodCustomDefaulter_Default_SkipsWhenAlreadyInjected(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, pod.Spec.Containers, 1)
+}
+
+func TestValidateTargetPort(t *testing.T) {
+	tests := []struct {
+		name        string
+		port        string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "valid port",
+			port:        "8080",
+			expectError: false,
+		},
+		{
+			name:        "valid port min",
+			port:        "1",
+			expectError: false,
+		},
+		{
+			name:        "valid port max",
+			port:        "65535",
+			expectError: false,
+		},
+		{
+			name:        "non-numeric port",
+			port:        "abc",
+			expectError: true,
+			errorMsg:    "must be a number",
+		},
+		{
+			name:        "port too low",
+			port:        "0",
+			expectError: true,
+			errorMsg:    "must be between 1 and 65535",
+		},
+		{
+			name:        "port too high",
+			port:        "65536",
+			expectError: true,
+			errorMsg:    "must be between 1 and 65535",
+		},
+		{
+			name:        "negative port",
+			port:        "-1",
+			expectError: true,
+			errorMsg:    "must be between 1 and 65535",
+		},
+		{
+			name:        "port equals proxy port",
+			port:        "9090",
+			expectError: true,
+			errorMsg:    "cannot be the same as proxy port",
+		},
+		{
+			name:        "empty port",
+			port:        "",
+			expectError: true,
+			errorMsg:    "must be a number",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateTargetPort(tt.port)
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorMsg != "" {
+					assert.Contains(t, err.Error(), tt.errorMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestPodCustomDefaulter_InjectSidecar_InvalidTargetPort(t *testing.T) {
+	defaulter := &PodCustomDefaulter{ProxyImage: DefaultProxyImage}
+
+	tests := []struct {
+		name         string
+		port         string
+		expectedPort string
+	}{
+		{
+			name:         "non-numeric uses default",
+			port:         "abc",
+			expectedPort: DefaultTargetPort,
+		},
+		{
+			name:         "out of range uses default",
+			port:         "99999",
+			expectedPort: DefaultTargetPort,
+		},
+		{
+			name:         "proxy port conflict uses default",
+			port:         "9090",
+			expectedPort: DefaultTargetPort,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+					Annotations: map[string]string{
+						AnnotationTargetPort: tt.port,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "app"},
+					},
+				},
+			}
+
+			defaulter.injectSidecar(pod, []string{"x-request-id"})
+
+			var sidecar *corev1.Container
+			for i := range pod.Spec.Containers {
+				if pod.Spec.Containers[i].Name == ProxyContainerName {
+					sidecar = &pod.Spec.Containers[i]
+					break
+				}
+			}
+			require.NotNil(t, sidecar)
+
+			var targetHostEnv *corev1.EnvVar
+			for i := range sidecar.Env {
+				if sidecar.Env[i].Name == "TARGET_HOST" {
+					targetHostEnv = &sidecar.Env[i]
+					break
+				}
+			}
+			require.NotNil(t, targetHostEnv)
+			assert.Equal(t, "localhost:"+tt.expectedPort, targetHostEnv.Value)
+		})
+	}
 }
 
 func TestPodCustomValidator_ValidateCreate(t *testing.T) {
