@@ -72,7 +72,7 @@ func TestReadyHandler_TargetReachable(t *testing.T) {
 
 	targetHost := listener.Addr().String()
 
-	handler := readyHandler(targetHost)
+	handler := readyHandler(targetHost, 2*time.Second)
 	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
 	rr := httptest.NewRecorder()
 
@@ -93,7 +93,7 @@ func TestReadyHandler_TargetReachable(t *testing.T) {
 func TestReadyHandler_TargetNotReachable(t *testing.T) {
 	targetHost := "127.0.0.1:59999"
 
-	handler := readyHandler(targetHost)
+	handler := readyHandler(targetHost, 2*time.Second)
 	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
 	rr := httptest.NewRecorder()
 
@@ -213,7 +213,7 @@ func TestCheckTargetReachable(t *testing.T) {
 		}
 	}()
 
-	assert.True(t, checkTargetReachable(listener.Addr().String()))
+	assert.True(t, checkTargetReachable(listener.Addr().String(), 2*time.Second))
 
-	assert.False(t, checkTargetReachable("127.0.0.1:59999"))
+	assert.False(t, checkTargetReachable("127.0.0.1:59999", 2*time.Second))
 }

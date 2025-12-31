@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,6 +35,30 @@ func TestLoad_DefaultValues(t *testing.T) {
 	assert.Equal(t, 9090, cfg.ProxyPort)
 	assert.Equal(t, "info", cfg.LogLevel)
 	assert.Equal(t, 9091, cfg.MetricsPort)
+	// Check default timeout values
+	assert.Equal(t, 15*time.Second, cfg.ReadTimeout)
+	assert.Equal(t, 15*time.Second, cfg.WriteTimeout)
+	assert.Equal(t, 60*time.Second, cfg.IdleTimeout)
+	assert.Equal(t, 5*time.Second, cfg.ReadHeaderTimeout)
+	assert.Equal(t, 2*time.Second, cfg.TargetDialTimeout)
+}
+
+func TestLoad_CustomTimeouts(t *testing.T) {
+	t.Setenv("HEADERS_TO_PROPAGATE", "x-request-id")
+	t.Setenv("READ_TIMEOUT", "30s")
+	t.Setenv("WRITE_TIMEOUT", "45s")
+	t.Setenv("IDLE_TIMEOUT", "2m")
+	t.Setenv("READ_HEADER_TIMEOUT", "10s")
+	t.Setenv("TARGET_DIAL_TIMEOUT", "5s")
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	assert.Equal(t, 30*time.Second, cfg.ReadTimeout)
+	assert.Equal(t, 45*time.Second, cfg.WriteTimeout)
+	assert.Equal(t, 2*time.Minute, cfg.IdleTimeout)
+	assert.Equal(t, 10*time.Second, cfg.ReadHeaderTimeout)
+	assert.Equal(t, 5*time.Second, cfg.TargetDialTimeout)
 }
 
 func TestLoad_MissingHeaders(t *testing.T) {
@@ -150,7 +175,35 @@ func TestGetEnvInt(t *testing.T) {
 	assert.Equal(t, 10, getEnvInt("TEST_INVALID_INT", 10))
 }
 
+func TestGetEnvDuration(t *testing.T) {
+	t.Setenv("TEST_DURATION", "30s")
+	t.Setenv("TEST_DURATION_COMPLEX", "1m30s")
+	t.Setenv("TEST_DURATION_MS", "500ms")
+	t.Setenv("TEST_INVALID_DURATION", "not_a_duration")
+
+	assert.Equal(t, 30*time.Second, getEnvDuration("TEST_DURATION", 10*time.Second))
+	assert.Equal(t, 90*time.Second, getEnvDuration("TEST_DURATION_COMPLEX", 10*time.Second))
+	assert.Equal(t, 500*time.Millisecond, getEnvDuration("TEST_DURATION_MS", 10*time.Second))
+	assert.Equal(t, 10*time.Second, getEnvDuration("NONEXISTENT_DURATION", 10*time.Second))
+	assert.Equal(t, 10*time.Second, getEnvDuration("TEST_INVALID_DURATION", 10*time.Second))
+}
+
 func TestValidate(t *testing.T) {
+	validConfig := func() ProxyConfig {
+		return ProxyConfig{
+			HeadersToPropagate: []string{"x-request-id"},
+			TargetHost:         "localhost:8080",
+			ProxyPort:          9090,
+			LogLevel:           "info",
+			MetricsPort:        9091,
+			ReadTimeout:        15 * time.Second,
+			WriteTimeout:       15 * time.Second,
+			IdleTimeout:        60 * time.Second,
+			ReadHeaderTimeout:  5 * time.Second,
+			TargetDialTimeout:  2 * time.Second,
+		}
+	}
+
 	tests := []struct {
 		name      string
 		config    ProxyConfig
@@ -158,51 +211,89 @@ func TestValidate(t *testing.T) {
 		errMsg    string
 	}{
 		{
-			name: "valid config",
-			config: ProxyConfig{
-				HeadersToPropagate: []string{"x-request-id"},
-				TargetHost:         "localhost:8080",
-				ProxyPort:          9090,
-				LogLevel:           "info",
-				MetricsPort:        9091,
-			},
+			name:      "valid config",
+			config:    validConfig(),
 			expectErr: false,
 		},
 		{
 			name: "invalid proxy port - too high",
-			config: ProxyConfig{
-				HeadersToPropagate: []string{"x-request-id"},
-				TargetHost:         "localhost:8080",
-				ProxyPort:          70000,
-				LogLevel:           "info",
-				MetricsPort:        9091,
-			},
+			config: func() ProxyConfig {
+				c := validConfig()
+				c.ProxyPort = 70000
+				return c
+			}(),
 			expectErr: true,
 			errMsg:    "proxy port",
 		},
 		{
 			name: "invalid proxy port - zero",
-			config: ProxyConfig{
-				HeadersToPropagate: []string{"x-request-id"},
-				TargetHost:         "localhost:8080",
-				ProxyPort:          0,
-				LogLevel:           "info",
-				MetricsPort:        9091,
-			},
+			config: func() ProxyConfig {
+				c := validConfig()
+				c.ProxyPort = 0
+				return c
+			}(),
 			expectErr: true,
 			errMsg:    "proxy port",
 		},
 		{
 			name: "empty target host",
-			config: ProxyConfig{
-				HeadersToPropagate: []string{"x-request-id"},
-				TargetHost:         "",
-				ProxyPort:          9090,
-				LogLevel:           "info",
-				MetricsPort:        9091,
-			},
+			config: func() ProxyConfig {
+				c := validConfig()
+				c.TargetHost = ""
+				return c
+			}(),
 			expectErr: true,
 			errMsg:    "target host",
+		},
+		{
+			name: "invalid read timeout - zero",
+			config: func() ProxyConfig {
+				c := validConfig()
+				c.ReadTimeout = 0
+				return c
+			}(),
+			expectErr: true,
+			errMsg:    "read timeout",
+		},
+		{
+			name: "invalid write timeout - negative",
+			config: func() ProxyConfig {
+				c := validConfig()
+				c.WriteTimeout = -1 * time.Second
+				return c
+			}(),
+			expectErr: true,
+			errMsg:    "write timeout",
+		},
+		{
+			name: "invalid idle timeout - zero",
+			config: func() ProxyConfig {
+				c := validConfig()
+				c.IdleTimeout = 0
+				return c
+			}(),
+			expectErr: true,
+			errMsg:    "idle timeout",
+		},
+		{
+			name: "invalid read header timeout - zero",
+			config: func() ProxyConfig {
+				c := validConfig()
+				c.ReadHeaderTimeout = 0
+				return c
+			}(),
+			expectErr: true,
+			errMsg:    "read header timeout",
+		},
+		{
+			name: "invalid target dial timeout - zero",
+			config: func() ProxyConfig {
+				c := validConfig()
+				c.TargetDialTimeout = 0
+				return c
+			}(),
+			expectErr: true,
+			errMsg:    "target dial timeout",
 		},
 	}
 

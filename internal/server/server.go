@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/bgruszka/contextforge/internal/config"
+	"github.com/bgruszka/contextforge/internal/metrics"
+	"github.com/bgruszka/contextforge/internal/middleware"
 	"github.com/rs/zerolog/log"
 )
 
@@ -39,17 +41,29 @@ func NewServer(cfg *config.ProxyConfig, proxyHandler http.Handler) *Server {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", healthHandler)
-	mux.HandleFunc("/ready", readyHandler(cfg.TargetHost))
+	mux.HandleFunc("/ready", readyHandler(cfg.TargetHost, cfg.TargetDialTimeout))
+	mux.Handle("/metrics", metrics.Handler())
 
-	mux.Handle("/", proxyHandler)
+	// Apply rate limiting middleware if enabled
+	rateLimiter := middleware.NewRateLimiter(cfg.RateLimitEnabled, cfg.RateLimitRPS, cfg.RateLimitBurst)
+	handler := rateLimiter.Middleware(proxyHandler)
+
+	if cfg.RateLimitEnabled {
+		log.Info().
+			Float64("rps", cfg.RateLimitRPS).
+			Int("burst", cfg.RateLimitBurst).
+			Msg("Rate limiting enabled")
+	}
+
+	mux.Handle("/", handler)
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.ProxyPort),
 		Handler:           mux,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       cfg.ReadTimeout,
+		WriteTimeout:      cfg.WriteTimeout,
+		IdleTimeout:       cfg.IdleTimeout,
+		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 	}
 
 	return &Server{
@@ -90,9 +104,9 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // readyHandler returns a handler that checks if the target host is reachable.
-func readyHandler(targetHost string) http.HandlerFunc {
+func readyHandler(targetHost string, dialTimeout time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		targetReachable := checkTargetReachable(targetHost)
+		targetReachable := checkTargetReachable(targetHost, dialTimeout)
 
 		response := ReadyResponse{
 			Status:          "ready",
@@ -116,8 +130,8 @@ func readyHandler(targetHost string) http.HandlerFunc {
 }
 
 // checkTargetReachable attempts a TCP connection to verify the target is reachable.
-func checkTargetReachable(targetHost string) bool {
-	conn, err := net.DialTimeout("tcp", targetHost, 2*time.Second)
+func checkTargetReachable(targetHost string, dialTimeout time.Duration) bool {
+	conn, err := net.DialTimeout("tcp", targetHost, dialTimeout)
 	if err != nil {
 		log.Debug().Err(err).Str("target", targetHost).Msg("Target not reachable")
 		return false
