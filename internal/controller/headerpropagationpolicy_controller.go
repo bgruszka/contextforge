@@ -149,7 +149,7 @@ func (r *HeaderPropagationPolicyReconciler) Reconcile(ctx context.Context, req c
 }
 
 // setReadyCondition sets the Ready condition on the policy
-func (r *HeaderPropagationPolicyReconciler) setReadyCondition(ctx context.Context, policy *ctxforgev1alpha1.HeaderPropagationPolicy, status metav1.ConditionStatus, reason, message string) {
+func (r *HeaderPropagationPolicyReconciler) setReadyCondition(_ context.Context, policy *ctxforgev1alpha1.HeaderPropagationPolicy, status metav1.ConditionStatus, reason, message string) {
 	condition := metav1.Condition{
 		Type:               ConditionTypeReady,
 		Status:             status,

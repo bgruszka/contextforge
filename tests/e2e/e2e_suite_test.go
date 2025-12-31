@@ -21,9 +21,9 @@ import (
 )
 
 var (
-	clientset     *kubernetes.Clientset
+	clientset      *kubernetes.Clientset
 	ctxforgeClient client.Client
-	testNamespace string
+	testNamespace  string
 )
 
 func TestE2E(t *testing.T) {
