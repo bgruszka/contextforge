@@ -16,9 +16,9 @@ import (
 
 type mockHandler struct{}
 
-func (m *mockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (m *mockHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("proxied"))
+	_, _ = w.Write([]byte("proxied"))
 }
 
 func TestNewServer(t *testing.T) {
@@ -61,12 +61,12 @@ func TestHealthHandler(t *testing.T) {
 func TestReadyHandler_TargetReachable(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	go func() {
 		conn, _ := listener.Accept()
 		if conn != nil {
-			conn.Close()
+			_ = conn.Close()
 		}
 	}()
 
@@ -123,7 +123,7 @@ func TestServer_StartAndShutdown(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg.ProxyPort = listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
+	_ = listener.Close()
 
 	srv := NewServer(cfg, &mockHandler{})
 
@@ -201,7 +201,7 @@ func TestServer_RoutesRequests(t *testing.T) {
 func TestCheckTargetReachable(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	go func() {
 		for {
@@ -209,7 +209,7 @@ func TestCheckTargetReachable(t *testing.T) {
 			if err != nil {
 				return
 			}
-			conn.Close()
+			_ = conn.Close()
 		}
 	}()
 

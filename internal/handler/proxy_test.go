@@ -97,7 +97,7 @@ func TestProxyHandler_ServeHTTP(t *testing.T) {
 		assert.Equal(t, "abc123", r.Header.Get("X-Request-Id"))
 		assert.Equal(t, "john", r.Header.Get("X-Dev-Id"))
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	}))
 	defer targetServer.Close()
 

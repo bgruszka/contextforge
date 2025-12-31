@@ -36,6 +36,22 @@ linters:
           - dupl
           - lll
         path: internal/*
+      # Relax linters for test files
+      - linters:
+          - dupl
+          - errcheck
+          - goconst
+          - ginkgolinter
+          - lll
+        path: _test\.go$
+      # Relax linters for e2e tests
+      - linters:
+          - dupl
+          - errcheck
+          - goconst
+          - ginkgolinter
+          - lll
+        path: tests/
     paths:
       - third_party$
       - builtin$

@@ -86,7 +86,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // readyHandler returns a handler that checks if the target host is reachable.
@@ -111,7 +111,7 @@ func readyHandler(targetHost string) http.HandlerFunc {
 		} else {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}
 }
 
@@ -122,6 +122,6 @@ func checkTargetReachable(targetHost string) bool {
 		log.Debug().Err(err).Str("target", targetHost).Msg("Target not reachable")
 		return false
 	}
-	conn.Close()
+	_ = conn.Close()
 	return true
 }

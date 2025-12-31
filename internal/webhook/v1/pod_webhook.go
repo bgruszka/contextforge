@@ -50,6 +50,9 @@ const (
 	DefaultTargetPort = "8080"
 	// ProxyPort is the port the proxy listens on
 	ProxyPort = 9090
+
+	// AnnotationValueTrue is the value "true" used in annotations
+	AnnotationValueTrue = "true"
 )
 
 var podlog = logf.Log.WithName("pod-webhook")
@@ -97,10 +100,7 @@ func (d *PodCustomDefaulter) Default(_ context.Context, obj runtime.Object) erro
 
 	podlog.Info("Injecting sidecar", "pod", pod.Name, "headers", headers)
 
-	if err := d.injectSidecar(pod, headers); err != nil {
-		return fmt.Errorf("failed to inject sidecar: %w", err)
-	}
-
+	d.injectSidecar(pod, headers)
 	d.modifyAppContainers(pod)
 	d.markAsInjected(pod)
 
@@ -113,7 +113,7 @@ func (d *PodCustomDefaulter) shouldInject(pod *corev1.Pod) bool {
 		return false
 	}
 	enabled, ok := pod.Annotations[AnnotationEnabled]
-	return ok && enabled == "true"
+	return ok && enabled == AnnotationValueTrue
 }
 
 // extractHeaders parses the headers annotation
@@ -153,7 +153,7 @@ func (d *PodCustomDefaulter) isAlreadyInjected(pod *corev1.Pod) bool {
 }
 
 // injectSidecar adds the proxy container to the pod
-func (d *PodCustomDefaulter) injectSidecar(pod *corev1.Pod, headers []string) error {
+func (d *PodCustomDefaulter) injectSidecar(pod *corev1.Pod, headers []string) {
 	targetPort := DefaultTargetPort
 	if pod.Annotations != nil {
 		if port, ok := pod.Annotations[AnnotationTargetPort]; ok && port != "" {
@@ -236,7 +236,6 @@ func (d *PodCustomDefaulter) injectSidecar(pod *corev1.Pod, headers []string) er
 	}
 
 	pod.Spec.Containers = append(pod.Spec.Containers, sidecar)
-	return nil
 }
 
 // modifyAppContainers adds HTTP_PROXY env vars to application containers
@@ -269,7 +268,7 @@ func (d *PodCustomDefaulter) markAsInjected(pod *corev1.Pod) {
 	if pod.Annotations == nil {
 		pod.Annotations = make(map[string]string)
 	}
-	pod.Annotations[AnnotationInjected] = "true"
+	pod.Annotations[AnnotationInjected] = AnnotationValueTrue
 }
 
 // +kubebuilder:webhook:path=/validate--v1-pod,mutating=false,failurePolicy=fail,sideEffects=None,groups="",resources=pods,verbs=create;update,versions=v1,name=vpod-v1.kb.io,admissionReviewVersions=v1
@@ -290,7 +289,7 @@ func (v *PodCustomValidator) ValidateCreate(_ context.Context, obj runtime.Objec
 		return nil, nil
 	}
 
-	if enabled, ok := pod.Annotations[AnnotationEnabled]; ok && enabled == "true" {
+	if enabled, ok := pod.Annotations[AnnotationEnabled]; ok && enabled == AnnotationValueTrue {
 		headers, hasHeaders := pod.Annotations[AnnotationHeaders]
 		if !hasHeaders || strings.TrimSpace(headers) == "" {
 			return admission.Warnings{

@@ -29,17 +29,15 @@ func NewHeaderPropagatingTransport(headers []string, base http.RoundTripper) *He
 func (t *HeaderPropagatingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	headerMap := GetHeadersFromContext(req.Context())
 
-	if headerMap != nil {
-		for name, value := range headerMap {
-			if req.Header.Get(name) == "" {
-				req.Header.Set(name, value)
-				if log.Debug().Enabled() {
-					log.Debug().
-						Str("header", name).
-						Str("value", value).
-						Str("url", req.URL.String()).
-						Msg("Injecting header into outbound request")
-				}
+	for name, value := range headerMap {
+		if req.Header.Get(name) == "" {
+			req.Header.Set(name, value)
+			if log.Debug().Enabled() {
+				log.Debug().
+					Str("header", name).
+					Str("value", value).
+					Str("url", req.URL.String()).
+					Msg("Injecting header into outbound request")
 			}
 		}
 	}

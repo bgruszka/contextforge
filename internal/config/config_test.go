@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,12 +8,11 @@ import (
 )
 
 func TestLoad_Success(t *testing.T) {
-	os.Setenv("HEADERS_TO_PROPAGATE", "x-request-id,x-dev-id,x-tenant-id")
-	os.Setenv("TARGET_HOST", "localhost:8080")
-	os.Setenv("PROXY_PORT", "9090")
-	os.Setenv("LOG_LEVEL", "debug")
-	os.Setenv("METRICS_PORT", "9091")
-	defer clearEnv()
+	t.Setenv("HEADERS_TO_PROPAGATE", "x-request-id,x-dev-id,x-tenant-id")
+	t.Setenv("TARGET_HOST", "localhost:8080")
+	t.Setenv("PROXY_PORT", "9090")
+	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("METRICS_PORT", "9091")
 
 	cfg, err := Load()
 
@@ -27,8 +25,7 @@ func TestLoad_Success(t *testing.T) {
 }
 
 func TestLoad_DefaultValues(t *testing.T) {
-	os.Setenv("HEADERS_TO_PROPAGATE", "x-request-id")
-	defer clearEnv()
+	t.Setenv("HEADERS_TO_PROPAGATE", "x-request-id")
 
 	cfg, err := Load()
 
@@ -40,8 +37,6 @@ func TestLoad_DefaultValues(t *testing.T) {
 }
 
 func TestLoad_MissingHeaders(t *testing.T) {
-	clearEnv()
-
 	cfg, err := Load()
 
 	assert.Nil(t, cfg)
@@ -50,8 +45,7 @@ func TestLoad_MissingHeaders(t *testing.T) {
 }
 
 func TestLoad_EmptyHeaders(t *testing.T) {
-	os.Setenv("HEADERS_TO_PROPAGATE", "  ,  ,  ")
-	defer clearEnv()
+	t.Setenv("HEADERS_TO_PROPAGATE", "  ,  ,  ")
 
 	cfg, err := Load()
 
@@ -61,9 +55,8 @@ func TestLoad_EmptyHeaders(t *testing.T) {
 }
 
 func TestLoad_InvalidProxyPort(t *testing.T) {
-	os.Setenv("HEADERS_TO_PROPAGATE", "x-request-id")
-	os.Setenv("PROXY_PORT", "99999")
-	defer clearEnv()
+	t.Setenv("HEADERS_TO_PROPAGATE", "x-request-id")
+	t.Setenv("PROXY_PORT", "99999")
 
 	cfg, err := Load()
 
@@ -73,10 +66,9 @@ func TestLoad_InvalidProxyPort(t *testing.T) {
 }
 
 func TestLoad_SamePortConflict(t *testing.T) {
-	os.Setenv("HEADERS_TO_PROPAGATE", "x-request-id")
-	os.Setenv("PROXY_PORT", "9090")
-	os.Setenv("METRICS_PORT", "9090")
-	defer clearEnv()
+	t.Setenv("HEADERS_TO_PROPAGATE", "x-request-id")
+	t.Setenv("PROXY_PORT", "9090")
+	t.Setenv("METRICS_PORT", "9090")
 
 	cfg, err := Load()
 
@@ -86,9 +78,8 @@ func TestLoad_SamePortConflict(t *testing.T) {
 }
 
 func TestLoad_InvalidLogLevel(t *testing.T) {
-	os.Setenv("HEADERS_TO_PROPAGATE", "x-request-id")
-	os.Setenv("LOG_LEVEL", "invalid")
-	defer clearEnv()
+	t.Setenv("HEADERS_TO_PROPAGATE", "x-request-id")
+	t.Setenv("LOG_LEVEL", "invalid")
 
 	cfg, err := Load()
 
@@ -144,20 +135,15 @@ func TestParseHeaders(t *testing.T) {
 }
 
 func TestGetEnv(t *testing.T) {
-	os.Setenv("TEST_KEY", "test_value")
-	defer os.Unsetenv("TEST_KEY")
+	t.Setenv("TEST_KEY", "test_value")
 
 	assert.Equal(t, "test_value", getEnv("TEST_KEY", "default"))
 	assert.Equal(t, "default", getEnv("NONEXISTENT_KEY", "default"))
 }
 
 func TestGetEnvInt(t *testing.T) {
-	os.Setenv("TEST_INT", "42")
-	os.Setenv("TEST_INVALID_INT", "not_a_number")
-	defer func() {
-		os.Unsetenv("TEST_INT")
-		os.Unsetenv("TEST_INVALID_INT")
-	}()
+	t.Setenv("TEST_INT", "42")
+	t.Setenv("TEST_INVALID_INT", "not_a_number")
 
 	assert.Equal(t, 42, getEnvInt("TEST_INT", 10))
 	assert.Equal(t, 10, getEnvInt("NONEXISTENT_INT", 10))
@@ -233,12 +219,4 @@ func TestValidate(t *testing.T) {
 			}
 		})
 	}
-}
-
-func clearEnv() {
-	os.Unsetenv("HEADERS_TO_PROPAGATE")
-	os.Unsetenv("TARGET_HOST")
-	os.Unsetenv("PROXY_PORT")
-	os.Unsetenv("LOG_LEVEL")
-	os.Unsetenv("METRICS_PORT")
 }
