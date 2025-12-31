@@ -51,7 +51,15 @@ var _ = Describe("HeaderPropagationPolicy Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: ctxforgev1alpha1.HeaderPropagationPolicySpec{
+						PropagationRules: []ctxforgev1alpha1.PropagationRule{
+							{
+								Headers: []ctxforgev1alpha1.HeaderConfig{
+									{Name: "x-request-id"},
+								},
+							},
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
