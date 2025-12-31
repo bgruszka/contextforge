@@ -1,0 +1,113 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'deploy/**'
+      - 'Dockerfile.*'
+      - '.github/workflows/e2e.yaml'
+
+env:
+  GO_VERSION: '1.24'
+
+jobs:
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: v3.13.0
+
+      - name: Create kind cluster
+        run: |
+          kind create cluster --name ctxforge-e2e --wait 120s
+
+      - name: Build Docker images
+        run: |
+          docker build -t contextforge-proxy:e2e -f Dockerfile.proxy .
+          docker build -t contextforge-operator:e2e -f Dockerfile.operator .
+
+      - name: Load images into kind
+        run: |
+          kind load docker-image contextforge-proxy:e2e --name ctxforge-e2e
+          kind load docker-image contextforge-operator:e2e --name ctxforge-e2e
+
+      - name: Install cert-manager
+        run: |
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+          kubectl wait --for=condition=Available deployment/cert-manager -n cert-manager --timeout=120s
+          kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=120s
+          kubectl wait --for=condition=Available deployment/cert-manager-cainjector -n cert-manager --timeout=120s
+
+      - name: Generate manifests
+        run: make manifests generate
+
+      - name: Install CRDs
+        run: make install
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install contextforge deploy/helm/contextforge \
+            --namespace ctxforge-system \
+            --create-namespace \
+            --set operator.image.repository=contextforge-operator \
+            --set operator.image.tag=e2e \
+            --set operator.image.pullPolicy=Never \
+            --set proxy.image.repository=contextforge-proxy \
+            --set proxy.image.tag=e2e \
+            --set proxy.image.pullPolicy=Never \
+            --set webhook.certManager.enabled=true \
+            --wait \
+            --timeout 180s
+
+      - name: Wait for operator
+        run: |
+          kubectl wait --for=condition=Available deployment/contextforge-operator \
+            -n ctxforge-system \
+            --timeout=120s
+
+      - name: Run E2E tests
+        run: go test -v ./tests/e2e/... -timeout 20m
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== Operator logs ==="
+          kubectl logs -n ctxforge-system deployment/contextforge-operator --tail=100 || true
+          echo ""
+          echo "=== Pod status ==="
+          kubectl get pods -A || true
+          echo ""
+          echo "=== Events ==="
+          kubectl get events -n ctxforge-system --sort-by='.lastTimestamp' || true
+
+      - name: Cleanup
+        if: always()
+        run: kind delete cluster --name ctxforge-e2e

@@ -1,0 +1,226 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  REGISTRY: ghcr.io
+  OPERATOR_IMAGE: ghcr.io/${{ github.repository_owner }}/contextforge-operator
+  PROXY_IMAGE: ghcr.io/${{ github.repository_owner }}/contextforge-proxy
+
+jobs:
+  test:
+    name: Test before release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests
+        run: make test
+
+  build-and-push:
+    name: Build and Push Images
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for operator
+        id: meta-operator
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.OPERATOR_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+
+      - name: Extract metadata for proxy
+        id: meta-proxy
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.PROXY_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+
+      - name: Extract version
+        id: meta
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Build and push operator image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.operator
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta-operator.outputs.tags }}
+          labels: ${{ steps.meta-operator.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push proxy image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.proxy
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta-proxy.outputs.tags }}
+          labels: ${{ steps.meta-proxy.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        uses: orhun/git-cliff-action@v3
+        with:
+          config: .github/cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body: |
+            ## Docker Images
+
+            ```bash
+            # Operator
+            docker pull ${{ env.OPERATOR_IMAGE }}:${{ needs.build-and-push.outputs.version }}
+
+            # Proxy
+            docker pull ${{ env.PROXY_IMAGE }}:${{ needs.build-and-push.outputs.version }}
+            ```
+
+            ## Helm Installation
+
+            ```bash
+            helm repo add contextforge https://ctxforge.io
+            helm repo update
+            helm upgrade --install contextforge contextforge/contextforge \
+              --namespace ctxforge-system \
+              --create-namespace \
+              --set operator.image.tag=${{ needs.build-and-push.outputs.version }} \
+              --set proxy.image.tag=${{ needs.build-and-push.outputs.version }}
+            ```
+
+            ## Changelog
+
+            ${{ steps.changelog.outputs.content }}
+          draft: false
+          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-helm-chart:
+    name: Update Helm Chart Version
+    runs-on: ubuntu-latest
+    needs: [build-and-push, create-release]
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Update Chart.yaml version
+        run: |
+          VERSION=${{ needs.build-and-push.outputs.version }}
+          sed -i "s/^version:.*/version: ${VERSION}/" deploy/helm/contextforge/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" deploy/helm/contextforge/Chart.yaml
+
+      - name: Update values.yaml image tags
+        run: |
+          VERSION=${{ needs.build-and-push.outputs.version }}
+          sed -i "s/tag:.*/tag: \"${VERSION}\"/" deploy/helm/contextforge/values.yaml
+
+      - name: Generate full changelog for website
+        uses: orhun/git-cliff-action@v3
+        with:
+          config: .github/cliff.toml
+          args: --strip header
+        env:
+          OUTPUT: CHANGELOG_FULL.md
+
+      - name: Update website changelog
+        run: |
+          VERSION=${{ needs.build-and-push.outputs.version }}
+          DATE=$(date +%Y-%m-%d)
+
+          # Create new changelog content
+          cat > website/content/docs/changelog.md << 'HEADER'
+          ---
+          title: Changelog
+          weight: 10
+          ---
+
+          All notable changes to ContextForge are documented here.
+
+          This changelog is automatically updated with each release.
+
+          HEADER
+
+          # Append the generated changelog
+          cat CHANGELOG_FULL.md >> website/content/docs/changelog.md
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump to v${{ needs.build-and-push.outputs.version }}"
+          title: "chore: release v${{ needs.build-and-push.outputs.version }}"
+          body: |
+            Automated PR to update versions after release v${{ needs.build-and-push.outputs.version }}.
+
+            **Changes:**
+            - Updates Helm `Chart.yaml` version and appVersion
+            - Updates Helm `values.yaml` image tags
+            - Updates website changelog
+
+            Once merged, the Helm chart and website will be automatically released.
+          branch: chore/release-${{ needs.build-and-push.outputs.version }}
+          delete-branch: true
