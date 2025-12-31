@@ -11,13 +11,18 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	ctxforgev1alpha1 "github.com/bgruszka/contextforge/api/v1alpha1"
 )
 
 var (
 	clientset     *kubernetes.Clientset
+	ctxforgeClient client.Client
 	testNamespace string
 )
 
@@ -40,6 +45,13 @@ var _ = BeforeSuite(func() {
 
 	clientset, err = kubernetes.NewForConfig(config)
 	Expect(err).NotTo(HaveOccurred(), "Failed to create Kubernetes client")
+
+	// Create controller-runtime client for CRDs
+	scheme := runtime.NewScheme()
+	Expect(corev1.AddToScheme(scheme)).To(Succeed())
+	Expect(ctxforgev1alpha1.AddToScheme(scheme)).To(Succeed())
+	ctxforgeClient, err = client.New(config, client.Options{Scheme: scheme})
+	Expect(err).NotTo(HaveOccurred(), "Failed to create controller-runtime client")
 
 	// Create test namespace
 	testNamespace = fmt.Sprintf("ctxforge-e2e-%d", time.Now().Unix())
