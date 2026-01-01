@@ -97,7 +97,8 @@ var _ = Describe("HeaderPropagationPolicy Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(RequeueAfter))
+			// No matching pods - should requeue to check periodically
+			Expect(result.RequeueAfter).To(Equal(RequeueAfterNoMatches))
 
 			By("Verifying the status was updated")
 			policy := &ctxforgev1alpha1.HeaderPropagationPolicy{}
@@ -240,7 +241,8 @@ var _ = Describe("HeaderPropagationPolicy Controller", func() {
 				NamespacedName: policyNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(RequeueAfter))
+			// Running pods - no requeue needed, rely on event-driven reconciliation
+			Expect(result.RequeueAfter).To(BeZero())
 
 			By("Verifying the status shows 1 applied pod")
 			policy := &ctxforgev1alpha1.HeaderPropagationPolicy{}

@@ -39,8 +39,13 @@ const (
 	// ConditionTypeReady indicates whether the policy is ready and applied
 	ConditionTypeReady = "Ready"
 
-	// RequeueAfter is the default requeue interval for periodic reconciliation
-	RequeueAfter = 30 * time.Second
+	// RequeueAfterNoMatches is the requeue interval when no pods match the selector.
+	// We check periodically in case pods are created outside of our watch events.
+	RequeueAfterNoMatches = 30 * time.Second
+
+	// RequeueAfterPendingPods is the requeue interval when pods exist but aren't ready.
+	// Shorter interval to quickly detect when pods become ready.
+	RequeueAfterPendingPods = 10 * time.Second
 )
 
 // HeaderPropagationPolicyReconciler reconciles a HeaderPropagationPolicy object
@@ -107,19 +112,35 @@ func (r *HeaderPropagationPolicyReconciler) Reconcile(ctx context.Context, req c
 		return ctrl.Result{}, err
 	}
 
-	// Count running pods with the sidecar injected
-	matchedPods := int32(0)
+	// Count pods by state
+	var matchedPods int32
+	var pendingPods int32
+	var totalSelectorMatches int32
+
 	for _, pod := range podList.Items {
-		if pod.Status.Phase == corev1.PodRunning {
-			// Check if the pod has the ctxforge sidecar
-			for _, container := range pod.Spec.Containers {
-				if container.Name == "ctxforge-proxy" {
-					matchedPods++
-					break
-				}
+		// Check if the pod has the ctxforge sidecar
+		hasSidecar := false
+		for _, container := range pod.Spec.Containers {
+			if container.Name == "ctxforge-proxy" {
+				hasSidecar = true
+				break
+			}
+		}
+
+		if hasSidecar {
+			totalSelectorMatches++
+			switch pod.Status.Phase {
+			case corev1.PodRunning:
+				matchedPods++
+			case corev1.PodPending:
+				pendingPods++
 			}
 		}
 	}
+
+	// Determine if status changed
+	statusChanged := policy.Status.AppliedToPods != matchedPods ||
+		policy.Status.ObservedGeneration != policy.Generation
 
 	// Update status
 	policy.Status.ObservedGeneration = policy.Generation
@@ -142,10 +163,34 @@ func (r *HeaderPropagationPolicyReconciler) Reconcile(ctx context.Context, req c
 
 	log.Info("Reconciled HeaderPropagationPolicy",
 		"appliedToPods", matchedPods,
-		"selector", selector.String())
+		"pendingPods", pendingPods,
+		"totalWithSidecar", totalSelectorMatches,
+		"selector", selector.String(),
+		"statusChanged", statusChanged)
 
-	// Requeue to periodically update pod counts
-	return ctrl.Result{RequeueAfter: RequeueAfter}, nil
+	// Determine requeue strategy based on current state
+	//
+	// Event-driven reconciliation handles most changes (pod create/delete/update),
+	// but periodic requeue is needed for edge cases:
+	// 1. Pod phase transitions (Pending -> Running) may not trigger events
+	// 2. Pods created in other namespaces that match a cluster-wide policy
+	// 3. Recovery from controller restarts
+	//
+	// Optimization: Only requeue when there's a reason to check again
+	if pendingPods > 0 {
+		// Pods are starting up, check again soon
+		return ctrl.Result{RequeueAfter: RequeueAfterPendingPods}, nil
+	}
+
+	if matchedPods == 0 && totalSelectorMatches == 0 {
+		// No matching pods at all - periodic check as fallback
+		// This catches pods created outside our watch events
+		return ctrl.Result{RequeueAfter: RequeueAfterNoMatches}, nil
+	}
+
+	// Pods are running and stable - rely on event-driven reconciliation
+	// No periodic requeue needed; pod events will trigger reconciliation
+	return ctrl.Result{}, nil
 }
 
 // setReadyCondition sets the Ready condition on the policy

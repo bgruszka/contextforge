@@ -97,7 +97,7 @@ List of rules defining which headers to propagate:
 | `headers` | list | Headers to propagate |
 | `headers[].name` | string | Header name (case-insensitive) |
 | `headers[].generate` | bool | Generate header if missing |
-| `headers[].generatorType` | string | Generator type: `uuid`, `timestamp` |
+| `headers[].generatorType` | string | Generator type: `uuid`, `ulid`, `timestamp` |
 | `headers[].propagate` | bool | Whether to propagate (default: true) |
 | `pathRegex` | string | Regex to match request paths |
 | `methods` | list | HTTP methods to apply rule to |
@@ -108,11 +108,43 @@ The sidecar proxy is configured through environment variables (set automatically
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HEADERS_TO_PROPAGATE` | `""` | Comma-separated header names |
+| `HEADERS_TO_PROPAGATE` | `""` | Comma-separated header names (simple mode) |
+| `HEADER_RULES` | `""` | JSON array of advanced header rules (alternative to HEADERS_TO_PROPAGATE) |
 | `TARGET_HOST` | `localhost:8080` | Application container address |
 | `PROXY_PORT` | `9090` | Proxy listen port |
 | `LOG_LEVEL` | `info` | Log level: debug, info, warn, error |
 | `METRICS_PORT` | `9091` | Prometheus metrics port |
+
+### Advanced Header Rules (HEADER_RULES)
+
+For advanced configuration including header generation and filtering, use `HEADER_RULES`:
+
+```bash
+HEADER_RULES='[
+  {"name": "x-request-id", "generate": true, "generatorType": "uuid"},
+  {"name": "x-tenant-id"},
+  {"name": "x-api-key", "pathRegex": "^/api/.*", "methods": ["POST", "PUT"]}
+]'
+```
+
+#### Header Rule Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | string | (required) | HTTP header name |
+| `generate` | bool | `false` | Auto-generate if header is missing |
+| `generatorType` | string | `uuid` | Generator: `uuid`, `ulid`, or `timestamp` |
+| `propagate` | bool | `true` | Whether to propagate this header |
+| `pathRegex` | string | - | Regex pattern to match request paths |
+| `methods` | []string | - | HTTP methods to match (e.g., `["GET", "POST"]`) |
+
+#### Generator Types
+
+| Type | Format | Example |
+|------|--------|---------|
+| `uuid` | UUID v4 | `550e8400-e29b-41d4-a716-446655440000` |
+| `ulid` | ULID (sortable) | `01ARZ3NDEKTSV4RRFFQ69G5FAV` |
+| `timestamp` | RFC3339Nano | `2025-01-01T12:00:00.123456789Z` |
 
 ## Namespace Configuration
 

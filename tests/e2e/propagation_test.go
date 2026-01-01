@@ -86,9 +86,9 @@ var _ = Describe("Header Propagation", Ordered, func() {
 		})
 
 		It("should generate request ID if not present", func() {
-			// This test would verify header generation functionality
-			// when configured with generate: true in HeaderPropagationPolicy
-			Skip("Header generation not implemented in MVP")
+			// Header generation is now implemented - see advanced_features_test.go
+			// for comprehensive generation tests (UUID, ULID, timestamp)
+			Skip("See advanced_features_test.go for comprehensive header generation tests")
 		})
 	})
 })

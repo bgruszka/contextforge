@@ -118,3 +118,8 @@ rbac:
 # CRD installation
 crds:
   install: true
+
+# Example HeaderPropagationPolicy resources
+# Enable to deploy example policies that demonstrate common use cases
+examples:
+  enabled: false

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"regexp"
 	"testing"
 	"time"
 
@@ -67,6 +68,167 @@ func TestLoad_MissingHeaders(t *testing.T) {
 	assert.Nil(t, cfg)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "HEADERS_TO_PROPAGATE")
+}
+
+func TestLoad_HeaderRules(t *testing.T) {
+	t.Setenv("HEADER_RULES", `[{"name":"x-request-id","generate":true,"generatorType":"uuid"},{"name":"x-tenant-id","propagate":true}]`)
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	assert.Len(t, cfg.HeaderRules, 2)
+	assert.Equal(t, "x-request-id", cfg.HeaderRules[0].Name)
+	assert.True(t, cfg.HeaderRules[0].Generate)
+	assert.Equal(t, "uuid", string(cfg.HeaderRules[0].GeneratorType))
+	assert.Equal(t, "x-tenant-id", cfg.HeaderRules[1].Name)
+	assert.True(t, cfg.HeaderRules[1].Propagate)
+	// HeadersToPropagate should be populated for backward compatibility
+	assert.Contains(t, cfg.HeadersToPropagate, "x-request-id")
+	assert.Contains(t, cfg.HeadersToPropagate, "x-tenant-id")
+}
+
+func TestLoad_HeaderRulesWithPathAndMethods(t *testing.T) {
+	t.Setenv("HEADER_RULES", `[{"name":"x-request-id","pathRegex":"^/api/.*","methods":["GET","POST"]}]`)
+
+	cfg, err := Load()
+
+	require.NoError(t, err)
+	assert.Len(t, cfg.HeaderRules, 1)
+	assert.Equal(t, "^/api/.*", cfg.HeaderRules[0].PathRegex)
+	assert.Equal(t, []string{"GET", "POST"}, cfg.HeaderRules[0].Methods)
+}
+
+func TestLoad_HeaderRulesInvalidJSON(t *testing.T) {
+	t.Setenv("HEADER_RULES", `not valid json`)
+
+	cfg, err := Load()
+
+	assert.Nil(t, cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid JSON")
+}
+
+func TestLoad_HeaderRulesInvalidGeneratorType(t *testing.T) {
+	t.Setenv("HEADER_RULES", `[{"name":"x-request-id","generate":true,"generatorType":"invalid"}]`)
+
+	cfg, err := Load()
+
+	assert.Nil(t, cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown generator type")
+}
+
+func TestLoad_HeaderRulesInvalidPathRegex(t *testing.T) {
+	t.Setenv("HEADER_RULES", `[{"name":"x-request-id","pathRegex":"[invalid"}]`)
+
+	cfg, err := Load()
+
+	assert.Nil(t, cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid path regex")
+}
+
+func TestLoad_HeaderRulesInvalidMethod(t *testing.T) {
+	t.Setenv("HEADER_RULES", `[{"name":"x-request-id","methods":["INVALID"]}]`)
+
+	cfg, err := Load()
+
+	assert.Nil(t, cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid HTTP method")
+}
+
+func TestHeaderRule_MatchesRequest(t *testing.T) {
+	tests := []struct {
+		name     string
+		rule     HeaderRule
+		path     string
+		method   string
+		expected bool
+	}{
+		{
+			name:     "no filters matches everything",
+			rule:     HeaderRule{Name: "x-request-id"},
+			path:     "/api/users",
+			method:   "GET",
+			expected: true,
+		},
+		{
+			name: "path regex matches",
+			rule: HeaderRule{
+				Name:      "x-request-id",
+				PathRegex: "^/api/.*",
+			},
+			path:     "/api/users",
+			method:   "GET",
+			expected: true,
+		},
+		{
+			name: "path regex does not match",
+			rule: HeaderRule{
+				Name:      "x-request-id",
+				PathRegex: "^/api/.*",
+			},
+			path:     "/health",
+			method:   "GET",
+			expected: false,
+		},
+		{
+			name: "method matches",
+			rule: HeaderRule{
+				Name:    "x-request-id",
+				Methods: []string{"GET", "POST"},
+			},
+			path:     "/api/users",
+			method:   "GET",
+			expected: true,
+		},
+		{
+			name: "method does not match",
+			rule: HeaderRule{
+				Name:    "x-request-id",
+				Methods: []string{"GET", "POST"},
+			},
+			path:     "/api/users",
+			method:   "DELETE",
+			expected: false,
+		},
+		{
+			name: "method matching is case insensitive",
+			rule: HeaderRule{
+				Name:    "x-request-id",
+				Methods: []string{"get", "post"},
+			},
+			path:     "/api/users",
+			method:   "GET",
+			expected: true,
+		},
+		{
+			name: "both path and method must match",
+			rule: HeaderRule{
+				Name:      "x-request-id",
+				PathRegex: "^/api/.*",
+				Methods:   []string{"GET"},
+			},
+			path:     "/api/users",
+			method:   "POST",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rule := tt.rule
+			// Compile path regex if present
+			if rule.PathRegex != "" {
+				compiled, err := regexp.Compile(rule.PathRegex)
+				require.NoError(t, err)
+				rule.CompiledPathRegex = compiled
+			}
+			result := rule.MatchesRequest(tt.path, tt.method)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
 }
 
 func TestLoad_EmptyHeaders(t *testing.T) {

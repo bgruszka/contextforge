@@ -2,18 +2,76 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/bgruszka/contextforge/internal/generator"
 )
+
+// HeaderRule defines a header propagation rule with optional generation settings.
+type HeaderRule struct {
+	// Name is the HTTP header name.
+	Name string `json:"name"`
+
+	// Generate indicates whether to auto-generate this header if missing.
+	Generate bool `json:"generate,omitempty"`
+
+	// GeneratorType specifies how to generate the header value (uuid, ulid, timestamp).
+	GeneratorType generator.Type `json:"generatorType,omitempty"`
+
+	// Propagate indicates whether to propagate this header (default: true).
+	Propagate bool `json:"propagate"`
+
+	// PathRegex is an optional regex pattern to match request paths.
+	PathRegex string `json:"pathRegex,omitempty"`
+
+	// Methods is an optional list of HTTP methods this rule applies to.
+	Methods []string `json:"methods,omitempty"`
+
+	// CompiledPathRegex is the compiled path regex (set after validation).
+	CompiledPathRegex *regexp.Regexp `json:"-"`
+}
+
+// MatchesRequest checks if this rule applies to the given request path and method.
+func (r *HeaderRule) MatchesRequest(path, method string) bool {
+	// Check path regex if specified
+	if r.CompiledPathRegex != nil {
+		if !r.CompiledPathRegex.MatchString(path) {
+			return false
+		}
+	}
+
+	// Check methods if specified
+	if len(r.Methods) > 0 {
+		methodMatches := false
+		upperMethod := strings.ToUpper(method)
+		for _, m := range r.Methods {
+			if strings.ToUpper(m) == upperMethod {
+				methodMatches = true
+				break
+			}
+		}
+		if !methodMatches {
+			return false
+		}
+	}
+
+	return true
+}
 
 // ProxyConfig holds the configuration for the proxy sidecar.
 type ProxyConfig struct {
 	// HeadersToPropagate is a list of HTTP header names to extract and propagate.
+	// Deprecated: Use HeaderRules for more control.
 	HeadersToPropagate []string
+
+	// HeaderRules defines header propagation rules with generation and filtering options.
+	HeaderRules []HeaderRule
 
 	// TargetHost is the address of the application container to forward requests to.
 	TargetHost string
@@ -97,18 +155,43 @@ func Load() (*ProxyConfig, error) {
 		RateLimitBurst:    getEnvInt("RATE_LIMIT_BURST", 100),
 	}
 
+	// Parse header rules - prefer HEADER_RULES over HEADERS_TO_PROPAGATE
+	headerRulesStr := getEnv("HEADER_RULES", "")
 	headersStr := getEnv("HEADERS_TO_PROPAGATE", "")
-	if headersStr == "" {
-		return nil, fmt.Errorf("HEADERS_TO_PROPAGATE environment variable is required (e.g., HEADERS_TO_PROPAGATE=x-request-id,x-tenant-id)")
+
+	if headerRulesStr != "" {
+		// Parse JSON header rules
+		rules, err := parseHeaderRules(headerRulesStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid HEADER_RULES: %w", err)
+		}
+		cfg.HeaderRules = rules
+		// Also populate HeadersToPropagate for backward compatibility
+		for _, rule := range rules {
+			if rule.Propagate {
+				cfg.HeadersToPropagate = append(cfg.HeadersToPropagate, rule.Name)
+			}
+		}
+	} else if headersStr != "" {
+		// Parse simple comma-separated headers (backward compatible)
+		headers, err := parseHeaders(headersStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid HEADERS_TO_PROPAGATE: %w", err)
+		}
+		cfg.HeadersToPropagate = headers
+		// Convert to HeaderRules for unified processing
+		for _, h := range headers {
+			cfg.HeaderRules = append(cfg.HeaderRules, HeaderRule{
+				Name:      h,
+				Propagate: true,
+			})
+		}
+	} else {
+		return nil, fmt.Errorf("HEADERS_TO_PROPAGATE or HEADER_RULES environment variable is required (e.g., HEADERS_TO_PROPAGATE=x-request-id,x-tenant-id)")
 	}
 
-	headers, err := parseHeaders(headersStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid HEADERS_TO_PROPAGATE: %w", err)
-	}
-	cfg.HeadersToPropagate = headers
-	if len(cfg.HeadersToPropagate) == 0 {
-		return nil, fmt.Errorf("at least one header must be specified in HEADERS_TO_PROPAGATE (e.g., x-request-id,x-correlation-id)")
+	if len(cfg.HeaderRules) == 0 {
+		return nil, fmt.Errorf("at least one header must be specified (e.g., HEADERS_TO_PROPAGATE=x-request-id,x-correlation-id)")
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -116,6 +199,61 @@ func Load() (*ProxyConfig, error) {
 	}
 
 	return cfg, nil
+}
+
+// parseHeaderRules parses a JSON array of header rules.
+// Format: [{"name":"x-request-id","generate":true,"generatorType":"uuid"},{"name":"x-tenant-id"}]
+func parseHeaderRules(input string) ([]HeaderRule, error) {
+	var rules []HeaderRule
+	if err := json.Unmarshal([]byte(input), &rules); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %w (expected format: [{\"name\":\"x-request-id\",\"generate\":true,\"generatorType\":\"uuid\"}])", err)
+	}
+
+	for i := range rules {
+		// Validate header name
+		if err := validateHeaderName(rules[i].Name); err != nil {
+			return nil, err
+		}
+
+		// Default Propagate to true if not explicitly set to false
+		// JSON unmarshaling sets bool to false by default, so we default to true
+		// for most use cases. To disable propagation, explicitly set "propagate": false
+		if !rules[i].Propagate {
+			rules[i].Propagate = true
+		}
+
+		// Validate generator type if generation is enabled
+		if rules[i].Generate {
+			if rules[i].GeneratorType == "" {
+				rules[i].GeneratorType = generator.TypeUUID // Default to UUID
+			}
+			if _, err := generator.New(rules[i].GeneratorType); err != nil {
+				return nil, fmt.Errorf("header %q: %w", rules[i].Name, err)
+			}
+		}
+
+		// Compile path regex if specified
+		if rules[i].PathRegex != "" {
+			compiled, err := regexp.Compile(rules[i].PathRegex)
+			if err != nil {
+				return nil, fmt.Errorf("header %q: invalid path regex %q: %w", rules[i].Name, rules[i].PathRegex, err)
+			}
+			rules[i].CompiledPathRegex = compiled
+		}
+
+		// Validate HTTP methods if specified
+		validMethods := map[string]bool{
+			"GET": true, "POST": true, "PUT": true, "DELETE": true,
+			"PATCH": true, "HEAD": true, "OPTIONS": true, "TRACE": true, "CONNECT": true,
+		}
+		for _, m := range rules[i].Methods {
+			if !validMethods[strings.ToUpper(m)] {
+				return nil, fmt.Errorf("header %q: invalid HTTP method %q", rules[i].Name, m)
+			}
+		}
+	}
+
+	return rules, nil
 }
 
 // Validate checks if the configuration values are valid.

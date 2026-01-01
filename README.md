@@ -70,6 +70,8 @@ That's it! Headers are now automatically propagated through your service chain.
 - **Production Ready** — Health checks, graceful shutdown, non-root containers
 - **Observable** — Prometheus metrics, structured logging, health endpoints
 - **Configurable** — Rate limiting, timeouts, and resource controls
+- **Header Generation** — Auto-generate missing headers (UUID, ULID, timestamp)
+- **Smart Filtering** — Path regex and HTTP method-based header rules
 
 > **Note:** Header propagation works for **HTTP** traffic. HTTPS requests use CONNECT tunneling where the proxy establishes a TCP tunnel but cannot inspect encrypted headers. For internal service-to-service communication, HTTP is typically used (with mTLS handled by the service mesh if needed).
 
@@ -160,7 +162,7 @@ flowchart TB
 
 ### HeaderPropagationPolicy CRD
 
-For advanced configuration:
+For advanced configuration including header generation and path/method filtering:
 
 ```yaml
 apiVersion: ctxforge.ctxforge.io/v1alpha1
@@ -168,15 +170,24 @@ kind: HeaderPropagationPolicy
 metadata:
   name: default-policy
 spec:
-  selector:
+  podSelector:
     matchLabels:
       app: my-service
   propagationRules:
+    # Auto-generate request ID if missing
     - headers:
         - name: x-request-id
           generate: true
-          generatorType: uuid
+          generatorType: uuid  # Options: uuid, ulid, timestamp
         - name: x-tenant-id
+
+    # Only propagate for API paths (excludes /health, /metrics)
+    - headers:
+        - name: x-debug-id
+      pathRegex: "^/api/.*"
+      methods:
+        - POST
+        - PUT
 ```
 
 ## Use Cases
@@ -185,6 +196,64 @@ spec:
 - **Request Tracing** — Track requests with correlation IDs
 - **Developer Debugging** — Add dev ID to trace your requests in staging
 - **Compliance & Audit** — Maintain audit trails across services
+
+## Comparison with Other Approaches
+
+### Why Not Use a Service Mesh?
+
+Service meshes like Istio, Linkerd, and Consul provide powerful networking features, but they **don't automatically propagate application-level headers**. Here's a comparison:
+
+| Feature | ContextForge | Istio/Linkerd/Consul |
+|---------|--------------|----------------------|
+| **Header Propagation** | Automatic, zero code changes | Manual - requires app code changes |
+| **Resource Overhead** | ~10MB memory per pod | 50-100MB+ memory per pod |
+| **Latency Impact** | <5ms | 1-10ms (varies) |
+| **Complexity** | Single operator + CRD | Full mesh control plane |
+| **Learning Curve** | Minimal | Significant |
+| **mTLS** | Use with mesh | Built-in |
+| **Traffic Management** | Not included | Advanced routing, retries, etc. |
+
+### When to Use ContextForge
+
+**Choose ContextForge when:**
+- You need header propagation without code changes
+- You want minimal resource overhead
+- You don't need full service mesh features
+- You're using a service mesh but need header propagation
+
+**Choose a Service Mesh when:**
+- You need mTLS, traffic management, observability
+- You're willing to invest in the operational complexity
+- You can modify application code for header propagation
+
+### ContextForge + Service Mesh
+
+ContextForge works alongside service meshes. Use ContextForge for header propagation while the mesh handles mTLS, traffic management, and observability.
+
+```yaml
+# Example: ContextForge with Istio
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-service
+  labels:
+    sidecar.istio.io/inject: "true"    # Istio sidecar
+spec:
+  template:
+    metadata:
+      annotations:
+        ctxforge.io/enabled: "true"     # ContextForge sidecar
+        ctxforge.io/headers: "x-request-id,x-tenant-id"
+```
+
+### Alternative Approaches
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **ContextForge** | Zero code changes, lightweight | HTTP only, single-purpose |
+| **OpenTelemetry SDK** | Rich instrumentation, standard | Requires code changes per language |
+| **Custom Middleware** | Full control | Maintenance burden, per-language |
+| **API Gateway** | Centralized | Only at edge, not service-to-service |
 
 ## Documentation
 

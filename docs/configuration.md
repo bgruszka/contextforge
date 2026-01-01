@@ -50,12 +50,63 @@ These environment variables configure the injected sidecar proxy. They can be se
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HEADERS_TO_PROPAGATE` | (required) | Comma-separated list of headers to propagate |
+| `HEADERS_TO_PROPAGATE` | (required*) | Comma-separated list of headers to propagate |
+| `HEADER_RULES` | - | JSON array of advanced header rules (alternative to HEADERS_TO_PROPAGATE) |
 | `TARGET_HOST` | `localhost:8080` | Target application host:port |
 | `PROXY_PORT` | `9090` | Port the proxy listens on |
 | `LOG_LEVEL` | `info` | Logging level: `debug`, `info`, `warn`, `error` |
 | `LOG_FORMAT` | `console` | Log format: `console` (human-readable) or `json` |
 | `METRICS_PORT` | `9091` | Port for Prometheus metrics (if separate from proxy) |
+
+*Either `HEADERS_TO_PROPAGATE` or `HEADER_RULES` is required.
+
+### Advanced Header Rules (HEADER_RULES)
+
+For advanced configuration including header generation and path/method filtering, use `HEADER_RULES` with a JSON array:
+
+```bash
+HEADER_RULES='[
+  {"name": "x-request-id", "generate": true, "generatorType": "uuid"},
+  {"name": "x-tenant-id"},
+  {"name": "x-api-key", "pathRegex": "^/api/.*", "methods": ["POST", "PUT"]}
+]'
+```
+
+#### Header Rule Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | string | (required) | HTTP header name |
+| `generate` | bool | `false` | Auto-generate if header is missing |
+| `generatorType` | string | `uuid` | Generator: `uuid`, `ulid`, or `timestamp` |
+| `propagate` | bool | `true` | Whether to propagate this header |
+| `pathRegex` | string | - | Regex pattern to match request paths |
+| `methods` | []string | - | HTTP methods to match (e.g., `["GET", "POST"]`) |
+
+#### Generator Types
+
+| Type | Format | Example |
+|------|--------|---------|
+| `uuid` | UUID v4 | `550e8400-e29b-41d4-a716-446655440000` |
+| `ulid` | ULID (sortable) | `01ARZ3NDEKTSV4RRFFQ69G5FAV` |
+| `timestamp` | RFC3339Nano | `2025-01-01T12:00:00.123456789Z` |
+
+#### Example: Auto-generate Request ID
+
+```bash
+HEADER_RULES='[{"name":"x-request-id","generate":true,"generatorType":"uuid"}]'
+```
+
+#### Example: Path and Method Filtering
+
+Only propagate headers for API endpoints, not health checks:
+
+```bash
+HEADER_RULES='[
+  {"name":"x-request-id","generate":true,"generatorType":"uuid","pathRegex":"^/api/.*"},
+  {"name":"x-tenant-id","pathRegex":"^/api/.*","methods":["POST","PUT","DELETE"]}
+]'
+```
 
 ### Timeout Settings
 

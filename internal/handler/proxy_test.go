@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 	"time"
 
@@ -15,8 +16,17 @@ import (
 
 // testConfig creates a valid test configuration with all required fields
 func testConfig(targetHost string, headers []string) *config.ProxyConfig {
+	// Create HeaderRules from headers for the new extractHeaders logic
+	rules := make([]config.HeaderRule, len(headers))
+	for i, h := range headers {
+		rules[i] = config.HeaderRule{
+			Name:      h,
+			Propagate: true,
+		}
+	}
 	return &config.ProxyConfig{
 		HeadersToPropagate: headers,
+		HeaderRules:        rules,
 		TargetHost:         targetHost,
 		ProxyPort:          9090,
 		LogLevel:           "info",
@@ -208,4 +218,154 @@ func TestProxyHandler_HeadersPropagatedThroughProxy(t *testing.T) {
 	assert.Equal(t, "corr-67890", receivedHeaders.Get("X-Correlation-Id"))
 	assert.Equal(t, "tenant-abc", receivedHeaders.Get("X-Tenant-Id"))
 	assert.Equal(t, "Bearer token", receivedHeaders.Get("Authorization"))
+}
+
+func TestProxyHandler_HeaderGeneration(t *testing.T) {
+	cfg := &config.ProxyConfig{
+		HeadersToPropagate: []string{"x-request-id"},
+		HeaderRules: []config.HeaderRule{
+			{
+				Name:          "x-request-id",
+				Generate:      true,
+				GeneratorType: "uuid",
+				Propagate:     true,
+			},
+		},
+		TargetHost:        "localhost:8080",
+		ProxyPort:         9090,
+		LogLevel:          "info",
+		MetricsPort:       9091,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		TargetDialTimeout: 2 * time.Second,
+	}
+
+	handler, err := NewProxyHandler(cfg)
+	require.NoError(t, err)
+
+	// Request without the header - should be generated
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	headers := handler.extractHeaders(req)
+
+	// Should have generated a UUID
+	assert.Len(t, headers, 1)
+	assert.NotEmpty(t, headers["X-Request-Id"])
+	// UUID format: 8-4-4-4-12
+	assert.Regexp(t, `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`, headers["X-Request-Id"])
+}
+
+func TestProxyHandler_HeaderGenerationPreservesExisting(t *testing.T) {
+	cfg := &config.ProxyConfig{
+		HeadersToPropagate: []string{"x-request-id"},
+		HeaderRules: []config.HeaderRule{
+			{
+				Name:          "x-request-id",
+				Generate:      true,
+				GeneratorType: "uuid",
+				Propagate:     true,
+			},
+		},
+		TargetHost:        "localhost:8080",
+		ProxyPort:         9090,
+		LogLevel:          "info",
+		MetricsPort:       9091,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		TargetDialTimeout: 2 * time.Second,
+	}
+
+	handler, err := NewProxyHandler(cfg)
+	require.NoError(t, err)
+
+	// Request with the header already set - should NOT be overwritten
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("X-Request-Id", "existing-value")
+	headers := handler.extractHeaders(req)
+
+	assert.Len(t, headers, 1)
+	assert.Equal(t, "existing-value", headers["X-Request-Id"])
+}
+
+func TestProxyHandler_PathFiltering(t *testing.T) {
+	cfg := &config.ProxyConfig{
+		HeadersToPropagate: []string{"x-request-id"},
+		HeaderRules: []config.HeaderRule{
+			{
+				Name:              "x-request-id",
+				Propagate:         true,
+				PathRegex:         "^/api/.*",
+				CompiledPathRegex: mustCompileRegex("^/api/.*"),
+			},
+		},
+		TargetHost:        "localhost:8080",
+		ProxyPort:         9090,
+		LogLevel:          "info",
+		MetricsPort:       9091,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		TargetDialTimeout: 2 * time.Second,
+	}
+
+	handler, err := NewProxyHandler(cfg)
+	require.NoError(t, err)
+
+	// Request matching path pattern
+	reqMatch := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+	reqMatch.Header.Set("X-Request-Id", "abc123")
+	headersMatch := handler.extractHeaders(reqMatch)
+	assert.Len(t, headersMatch, 1)
+	assert.Equal(t, "abc123", headersMatch["X-Request-Id"])
+
+	// Request NOT matching path pattern
+	reqNoMatch := httptest.NewRequest(http.MethodGet, "/health", nil)
+	reqNoMatch.Header.Set("X-Request-Id", "abc123")
+	headersNoMatch := handler.extractHeaders(reqNoMatch)
+	assert.Len(t, headersNoMatch, 0)
+}
+
+func TestProxyHandler_MethodFiltering(t *testing.T) {
+	cfg := &config.ProxyConfig{
+		HeadersToPropagate: []string{"x-request-id"},
+		HeaderRules: []config.HeaderRule{
+			{
+				Name:      "x-request-id",
+				Propagate: true,
+				Methods:   []string{"POST", "PUT"},
+			},
+		},
+		TargetHost:        "localhost:8080",
+		ProxyPort:         9090,
+		LogLevel:          "info",
+		MetricsPort:       9091,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		TargetDialTimeout: 2 * time.Second,
+	}
+
+	handler, err := NewProxyHandler(cfg)
+	require.NoError(t, err)
+
+	// POST request - should propagate
+	reqPost := httptest.NewRequest(http.MethodPost, "/api/users", nil)
+	reqPost.Header.Set("X-Request-Id", "abc123")
+	headersPost := handler.extractHeaders(reqPost)
+	assert.Len(t, headersPost, 1)
+
+	// GET request - should NOT propagate
+	reqGet := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+	reqGet.Header.Set("X-Request-Id", "abc123")
+	headersGet := handler.extractHeaders(reqGet)
+	assert.Len(t, headersGet, 0)
+}
+
+func mustCompileRegex(pattern string) *regexp.Regexp {
+	return regexp.MustCompile(pattern)
 }
