@@ -1,0 +1,261 @@
+---
+title: Configuration
+weight: 3
+---
+
+ContextForge can be configured through pod annotations and the HeaderPropagationPolicy CRD.
+
+## Pod Annotations
+
+### Required Annotations
+
+| Annotation | Value | Description |
+|------------|-------|-------------|
+| `ctxforge.io/enabled` | `"true"` | Enables sidecar injection for this pod |
+
+### Optional Annotations
+
+| Annotation | Default | Description |
+|------------|---------|-------------|
+| `ctxforge.io/headers` | `""` | Comma-separated list of headers to propagate (simple mode) |
+| `ctxforge.io/header-rules` | `""` | JSON array of advanced header rules (see [Advanced Header Rules](#advanced-header-rules-header_rules)) |
+| `ctxforge.io/target-port` | `8080` | Port of your application container |
+
+{{% callout type="info" %}}
+Use `ctxforge.io/headers` for simple header propagation. Use `ctxforge.io/header-rules` when you need header generation, path filtering, or method filtering.
+{{% /callout %}}
+
+### Example
+
+#### Simple Mode
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-service
+spec:
+  template:
+    metadata:
+      labels:
+        ctxforge.io/enabled: "true"
+      annotations:
+        ctxforge.io/enabled: "true"
+        ctxforge.io/headers: "x-request-id,x-tenant-id,x-correlation-id"
+        ctxforge.io/target-port: "3000"
+    spec:
+      containers:
+        - name: app
+          image: my-app:latest
+          ports:
+            - containerPort: 3000
+```
+
+#### Advanced Mode (with header-rules)
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-service
+spec:
+  template:
+    metadata:
+      labels:
+        ctxforge.io/enabled: "true"
+      annotations:
+        ctxforge.io/enabled: "true"
+        ctxforge.io/target-port: "3000"
+        ctxforge.io/header-rules: |
+          [
+            {"name": "x-request-id", "generate": true, "generatorType": "uuid"},
+            {"name": "x-tenant-id"},
+            {"name": "x-debug", "pathRegex": "^/api/.*", "methods": ["POST", "PUT"]}
+          ]
+    spec:
+      containers:
+        - name: app
+          image: my-app:latest
+          ports:
+            - containerPort: 3000
+```
+
+## HeaderPropagationPolicy CRD
+
+For more advanced configuration, use the HeaderPropagationPolicy custom resource:
+
+```yaml
+apiVersion: ctxforge.ctxforge.io/v1alpha1
+kind: HeaderPropagationPolicy
+metadata:
+  name: default-policy
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: my-service
+
+  propagationRules:
+    - headers:
+        - name: x-request-id
+          generate: true          # Auto-generate if missing
+          generatorType: uuid     # UUID generator
+        - name: x-tenant-id
+          propagate: true         # Always propagate
+        - name: x-debug
+          propagate: true
+      pathRegex: ".*"             # Apply to all paths
+      methods:                     # Apply to these methods
+        - GET
+        - POST
+        - PUT
+```
+
+### CRD Fields
+
+#### `spec.selector`
+
+Selects which pods this policy applies to:
+
+```yaml
+selector:
+  matchLabels:
+    app: my-service
+    environment: production
+```
+
+#### `spec.propagationRules`
+
+List of rules defining which headers to propagate:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `headers` | list | Headers to propagate |
+| `headers[].name` | string | Header name (case-insensitive) |
+| `headers[].generate` | bool | Generate header if missing |
+| `headers[].generatorType` | string | Generator type: `uuid`, `ulid`, `timestamp` |
+| `headers[].propagate` | bool | Whether to propagate (default: true) |
+| `pathRegex` | string | Regex to match request paths |
+| `methods` | list | HTTP methods to apply rule to |
+
+## Proxy Environment Variables
+
+The sidecar proxy is configured through environment variables (set automatically by the operator):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HEADERS_TO_PROPAGATE` | `""` | Comma-separated header names (simple mode) |
+| `HEADER_RULES` | `""` | JSON array of advanced header rules (alternative to HEADERS_TO_PROPAGATE) |
+| `TARGET_HOST` | `localhost:8080` | Application container address |
+| `PROXY_PORT` | `9090` | Proxy listen port |
+| `LOG_LEVEL` | `info` | Log level: debug, info, warn, error |
+| `METRICS_PORT` | `9091` | Prometheus metrics port |
+
+### Advanced Header Rules (HEADER_RULES)
+
+For advanced configuration including header generation and filtering, use `HEADER_RULES`:
+
+```bash
+HEADER_RULES='[
+  {"name": "x-request-id", "generate": true, "generatorType": "uuid"},
+  {"name": "x-tenant-id"},
+  {"name": "x-api-key", "pathRegex": "^/api/.*", "methods": ["POST", "PUT"]}
+]'
+```
+
+#### Header Rule Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | string | (required) | HTTP header name |
+| `generate` | bool | `false` | Auto-generate if header is missing |
+| `generatorType` | string | `uuid` | Generator: `uuid`, `ulid`, or `timestamp` |
+| `propagate` | bool | `true` | Whether to propagate this header |
+| `pathRegex` | string | - | Regex pattern to match request paths |
+| `methods` | []string | - | HTTP methods to match (e.g., `["GET", "POST"]`) |
+
+#### Generator Types
+
+| Type | Format | Example |
+|------|--------|---------|
+| `uuid` | UUID v4 | `550e8400-e29b-41d4-a716-446655440000` |
+| `ulid` | ULID (sortable) | `01ARZ3NDEKTSV4RRFFQ69G5FAV` |
+| `timestamp` | RFC3339Nano | `2025-01-01T12:00:00.123456789Z` |
+
+## Namespace Configuration
+
+### Disable Injection for a Namespace
+
+To prevent sidecar injection in a namespace:
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kube-system
+  labels:
+    ctxforge.io/injection: disabled
+```
+
+### Enable Injection by Default
+
+To inject sidecars into all pods in a namespace (without requiring annotations):
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+  labels:
+    ctxforge.io/injection: enabled
+```
+
+{{% callout type="info" %}}
+When namespace-level injection is enabled, you can still opt-out individual pods by setting `ctxforge.io/enabled: "false"` annotation.
+{{% /callout %}}
+
+## Helm Chart Values
+
+Key configuration options in `values.yaml`:
+
+```yaml
+# Operator configuration
+operator:
+  replicas: 1
+  image:
+    repository: ghcr.io/bgruszka/contextforge-operator
+    tag: latest
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Proxy sidecar defaults
+proxy:
+  image:
+    repository: ghcr.io/bgruszka/contextforge-proxy
+    tag: latest
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 64Mi
+
+# Webhook configuration
+webhook:
+  failurePolicy: Fail  # or Ignore
+  timeoutSeconds: 10
+  certManager:
+    enabled: false     # Set to true if using cert-manager
+
+# RBAC
+rbac:
+  create: true
+
+# Service Account
+serviceAccount:
+  create: true
+  name: ""
+```

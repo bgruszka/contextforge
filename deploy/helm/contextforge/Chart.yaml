@@ -1,0 +1,18 @@
+apiVersion: v2
+name: contextforge
+description: A Kubernetes operator for automatic HTTP header propagation via sidecar injection
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - kubernetes
+  - operator
+  - sidecar
+  - header-propagation
+  - tracing
+home: https://github.com/bgruszka/contextforge
+sources:
+  - https://github.com/bgruszka/contextforge
+maintainers:
+  - name: Blazej Gruszka
+    email: blazej@gruszka.info

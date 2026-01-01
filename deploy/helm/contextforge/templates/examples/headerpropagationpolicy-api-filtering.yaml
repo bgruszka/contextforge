@@ -1,0 +1,43 @@
+{{- if .Values.examples.enabled }}
+# Example: API-only header propagation with path and method filtering
+# This policy only propagates headers for API endpoints, not health checks
+apiVersion: ctxforge.ctxforge.io/v1alpha1
+kind: HeaderPropagationPolicy
+metadata:
+  name: {{ include "contextforge.fullname" . }}-api-filtering-example
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: example
+spec:
+  podSelector:
+    matchLabels:
+      ctxforge.io/api-filtering: "enabled"
+
+  propagationRules:
+    # Only propagate for API paths (excludes /health, /ready, /metrics)
+    - headers:
+        - name: x-request-id
+          generate: true
+          generatorType: uuid
+        - name: x-correlation-id
+      pathRegex: "^/api/.*"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - PATCH
+
+    # Timestamp header for all write operations
+    - headers:
+        - name: x-request-timestamp
+          generate: true
+          generatorType: timestamp
+      pathRegex: "^/api/.*"
+      methods:
+        - POST
+        - PUT
+        - DELETE
+        - PATCH
+{{- end }}

@@ -1,0 +1,29 @@
+{{- if .Values.examples.enabled }}
+# Example: Multi-tenant SaaS header propagation
+# This policy propagates tenant isolation and audit trail headers
+apiVersion: ctxforge.ctxforge.io/v1alpha1
+kind: HeaderPropagationPolicy
+metadata:
+  name: {{ include "contextforge.fullname" . }}-multitenant-example
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: example
+spec:
+  podSelector:
+    matchLabels:
+      ctxforge.io/multitenant: "enabled"
+
+  propagationRules:
+    # Tenant isolation headers - critical for data segregation
+    - headers:
+        - name: x-tenant-id
+        - name: x-organization-id
+        - name: x-workspace-id
+
+    # Audit trail headers - for compliance and debugging
+    - headers:
+        - name: x-user-id
+        - name: x-session-id
+        - name: x-auth-token-id
+{{- end }}

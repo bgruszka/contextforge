@@ -1,0 +1,125 @@
+# Default values for contextforge
+
+# Operator configuration
+operator:
+  # Number of replicas
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/bgruszka/contextforge-operator
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+  imagePullSecrets: []
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # PodDisruptionBudget configuration
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+  # Leader election settings
+  leaderElection:
+    enabled: true
+
+  # Metrics configuration
+  metrics:
+    enabled: true
+    port: 8080
+
+  # Health probe configuration
+  healthProbe:
+    port: 8081
+
+# Proxy sidecar configuration
+proxy:
+  image:
+    repository: ghcr.io/bgruszka/contextforge-proxy
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+  # Resource limits sized for typical API proxy workloads (~100-500 RPS per pod).
+  # For high-traffic deployments (>1000 RPS), increase these values.
+  # Memory: 64Mi handles Go runtime + connection pools; 256Mi limit for traffic spikes.
+  # CPU: 50m baseline; 500m limit allows burst during high concurrency.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # Default port the proxy listens on
+  port: 9090
+
+  # Default target port (application port)
+  defaultTargetPort: 8080
+
+  # Default log level
+  logLevel: info
+
+# Webhook configuration
+webhook:
+  # Port for webhook server
+  port: 9443
+
+  # Failure policy: Fail or Ignore
+  # WARNING: "Fail" means ALL pod creations will fail if the webhook is unavailable
+  # (during operator restarts, certificate issues, or network problems).
+  # Recommended: Use "Ignore" initially, switch to "Fail" only after thorough testing.
+  # With "Ignore", pods without sidecar injection will still be created if webhook fails.
+  failurePolicy: Ignore
+
+  # Certificate configuration
+  certManager:
+    # Set to true if cert-manager is installed
+    enabled: false
+    # Create a self-signed issuer (recommended for testing)
+    createSelfSignedIssuer: true
+    # Issuer reference for cert-manager (used if createSelfSignedIssuer is false)
+    issuerRef:
+      kind: Issuer
+      name: my-issuer
+
+  # Self-signed certificate settings (used if certManager.enabled is false)
+  selfSigned:
+    # Certificate validity in days
+    validityDays: 365
+
+# Namespace configuration
+namespace:
+  # Create the namespace
+  create: true
+  # Name of the namespace
+  name: contextforge-system
+
+# Service account configuration
+serviceAccount:
+  create: true
+  name: contextforge-operator
+  annotations: {}
+
+# RBAC configuration
+rbac:
+  create: true
+
+# CRD installation
+crds:
+  install: true
+
+# Example HeaderPropagationPolicy resources
+# Enable to deploy example policies that demonstrate common use cases
+examples:
+  enabled: false

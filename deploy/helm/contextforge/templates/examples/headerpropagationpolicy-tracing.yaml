@@ -1,0 +1,30 @@
+{{- if .Values.examples.enabled }}
+# Example: Basic tracing header propagation
+# This policy propagates common tracing headers and auto-generates x-request-id if missing
+apiVersion: ctxforge.ctxforge.io/v1alpha1
+kind: HeaderPropagationPolicy
+metadata:
+  name: {{ include "contextforge.fullname" . }}-tracing-example
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: example
+spec:
+  podSelector:
+    matchLabels:
+      ctxforge.io/tracing: "enabled"
+
+  propagationRules:
+    # Propagate standard tracing headers
+    - headers:
+        - name: x-request-id
+          generate: true
+          generatorType: uuid
+        - name: x-correlation-id
+        - name: x-trace-id
+        - name: x-span-id
+        - name: x-b3-traceid
+        - name: x-b3-spanid
+        - name: x-b3-parentspanid
+        - name: x-b3-sampled
+{{- end }}

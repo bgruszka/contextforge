@@ -1,0 +1,73 @@
+apiVersion: ctxforge.ctxforge.io/v1alpha1
+kind: HeaderPropagationPolicy
+metadata:
+  labels:
+    app.kubernetes.io/name: contextforge
+    app.kubernetes.io/managed-by: kustomize
+  name: default-tracing-policy
+spec:
+  # Select pods with specific labels
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: my-application
+
+  # Define header propagation rules
+  propagationRules:
+    # Basic tracing headers - propagate if present
+    - headers:
+        - name: x-request-id
+        - name: x-correlation-id
+        - name: x-trace-id
+        - name: x-span-id
+
+    # Auto-generate request ID if missing
+    - headers:
+        - name: x-request-id
+          generate: true
+          generatorType: uuid
+
+---
+apiVersion: ctxforge.ctxforge.io/v1alpha1
+kind: HeaderPropagationPolicy
+metadata:
+  name: multi-tenant-policy
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+
+  propagationRules:
+    # Tenant isolation headers
+    - headers:
+        - name: x-tenant-id
+        - name: x-organization-id
+
+    # Audit trail headers
+    - headers:
+        - name: x-user-id
+        - name: x-session-id
+
+---
+apiVersion: ctxforge.ctxforge.io/v1alpha1
+kind: HeaderPropagationPolicy
+metadata:
+  name: api-only-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: api-gateway
+
+  propagationRules:
+    # Only propagate on API paths, not health checks
+    - headers:
+        - name: x-request-id
+          generate: true
+          generatorType: uuid
+        - name: x-correlation-id
+      pathRegex: "^/api/.*"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - PATCH

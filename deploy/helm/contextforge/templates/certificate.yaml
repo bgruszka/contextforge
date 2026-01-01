@@ -1,0 +1,34 @@
+{{- if .Values.webhook.certManager.enabled }}
+{{- if .Values.webhook.certManager.createSelfSignedIssuer }}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "contextforge.fullname" . }}-selfsigned-issuer
+  namespace: {{ include "contextforge.namespace" . }}
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+{{- end }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "contextforge.fullname" . }}-serving-cert
+  namespace: {{ include "contextforge.namespace" . }}
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+spec:
+  dnsNames:
+    - {{ include "contextforge.fullname" . }}-webhook.{{ include "contextforge.namespace" . }}.svc
+    - {{ include "contextforge.fullname" . }}-webhook.{{ include "contextforge.namespace" . }}.svc.cluster.local
+  issuerRef:
+    kind: {{ .Values.webhook.certManager.issuerRef.kind }}
+    {{- if .Values.webhook.certManager.createSelfSignedIssuer }}
+    name: {{ include "contextforge.fullname" . }}-selfsigned-issuer
+    {{- else }}
+    name: {{ .Values.webhook.certManager.issuerRef.name }}
+    {{- end }}
+  secretName: {{ include "contextforge.fullname" . }}-webhook-certs
+{{- end }}

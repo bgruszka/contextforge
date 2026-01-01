@@ -1,0 +1,14 @@
+{{- if .Values.operator.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "contextforge.fullname" . }}-operator
+  namespace: {{ include "contextforge.namespace" . }}
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.operator.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "contextforge.selectorLabels" . | nindent 6 }}
+{{- end }}

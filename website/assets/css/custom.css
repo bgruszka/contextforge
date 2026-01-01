@@ -1,0 +1,248 @@
+/* Custom styles for ContextForge website */
+
+/* Primary color - indigo */
+:root {
+  --primary-hue: 239;
+  --primary-saturation: 84%;
+  --primary-lightness: 67%;
+}
+
+/* ============================================
+   HERO SECTION
+   ============================================ */
+
+.hextra-hero-headline {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 1.5rem !important;
+}
+
+.hextra-hero-subtitle {
+  font-size: 1.25rem;
+  color: #6b7280;
+  line-height: 1.75;
+  margin-bottom: 2rem !important;
+}
+
+html.dark .hextra-hero-subtitle {
+  color: #9ca3af;
+}
+
+/* Hero buttons container */
+.hextra-hero-button {
+  margin-top: 1rem !important;
+}
+
+/* ============================================
+   FEATURE GRID & CARDS
+   ============================================ */
+
+/* Add spacing around the feature grid */
+.hextra-feature-grid {
+  margin-top: 3rem !important;
+  margin-bottom: 4rem !important;
+  gap: 1.5rem !important;
+}
+
+/* Feature cards styling */
+.hextra-feature-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  padding: 1.5rem !important;
+  min-height: 200px;
+}
+
+.hextra-feature-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.15);
+}
+
+html.dark .hextra-feature-card:hover {
+  box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.4);
+}
+
+/* Feature card title */
+.hextra-feature-card h3 {
+  font-size: 1.25rem !important;
+  font-weight: 600 !important;
+  margin-bottom: 0.75rem !important;
+}
+
+/* Feature card subtitle */
+.hextra-feature-card p {
+  font-size: 0.95rem !important;
+  line-height: 1.6 !important;
+  color: #6b7280;
+}
+
+html.dark .hextra-feature-card p {
+  color: #9ca3af;
+}
+
+/* ============================================
+   SECTION SPACING
+   ============================================ */
+
+/* Major section headings */
+.hextra-content h2 {
+  margin-top: 5rem !important;
+  margin-bottom: 2rem !important;
+  padding-top: 2.5rem;
+  font-weight: 700;
+  font-size: 1.875rem !important;
+}
+
+/* First h2 after feature grid needs less top margin */
+.hextra-feature-grid + * + h2,
+.hextra-feature-grid + h2 {
+  margin-top: 2rem !important;
+}
+
+/* Paragraphs in content */
+.hextra-content p {
+  margin-bottom: 1.5rem !important;
+  margin-top: 1rem !important;
+  line-height: 1.85;
+}
+
+/* ============================================
+   CODE BLOCKS
+   ============================================ */
+
+.hextra-content pre {
+  border-radius: 12px !important;
+  margin: 2.5rem 0 !important;
+  padding: 1.5rem !important;
+}
+
+/* ASCII art diagram - slightly smaller font */
+.hextra-content pre code {
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+@media (min-width: 768px) {
+  .hextra-content pre code {
+    font-size: 0.8rem;
+  }
+}
+
+/* Mermaid diagrams - make them larger */
+.mermaid-container {
+  padding: 2rem 0;
+}
+
+.mermaid {
+  width: 100% !important;
+  margin: 2rem auto !important;
+  font-size: 1.2rem !important;
+}
+
+.mermaid svg {
+  width: 100% !important;
+  min-height: 550px !important;
+  height: auto !important;
+}
+
+.mermaid .node rect,
+.mermaid .node polygon {
+  rx: 8px;
+  ry: 8px;
+}
+
+.mermaid .edgeLabel {
+  font-size: 0.9rem;
+}
+
+.mermaid .cluster rect {
+  rx: 12px !important;
+  ry: 12px !important;
+}
+
+/* ============================================
+   CARDS (bottom navigation cards)
+   ============================================ */
+
+.hextra-cards {
+  margin-top: 3rem !important;
+  margin-bottom: 4rem !important;
+  gap: 1.5rem !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+}
+
+@media (max-width: 768px) {
+  .hextra-cards {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.hextra-card {
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  padding: 1.5rem !important;
+}
+
+.hextra-card:hover {
+  transform: translateY(-2px);
+  border-color: hsl(var(--primary-hue), var(--primary-saturation), var(--primary-lightness));
+}
+
+/* ============================================
+   LISTS
+   ============================================ */
+
+.hextra-content ul,
+.hextra-content ol {
+  margin: 1.5rem 0 !important;
+  padding-left: 1.5rem;
+}
+
+.hextra-content li {
+  margin-bottom: 0.5rem !important;
+  line-height: 1.75;
+}
+
+/* ============================================
+   HORIZONTAL RULES / DIVIDERS
+   ============================================ */
+
+.hextra-content hr {
+  margin: 5rem 0 !important;
+  border-color: #e5e7eb;
+}
+
+html.dark .hextra-content hr {
+  border-color: #374151;
+}
+
+/* ============================================
+   BADGE
+   ============================================ */
+
+.hextra-badge {
+  font-weight: 500;
+  margin-bottom: 2rem !important;
+}
+
+/* ============================================
+   RESPONSIVE ADJUSTMENTS
+   ============================================ */
+
+@media (max-width: 768px) {
+  .hextra-hero-headline {
+    font-size: 2rem !important;
+  }
+
+  .hextra-hero-subtitle {
+    font-size: 1.1rem;
+  }
+
+  .hextra-feature-grid {
+    gap: 1rem !important;
+  }
+
+  .hextra-content h2 {
+    font-size: 1.5rem !important;
+    margin-top: 3rem !important;
+  }
+}

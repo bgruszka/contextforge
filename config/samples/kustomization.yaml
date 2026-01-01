@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- ctxforge_v1alpha1_headerpropagationpolicy.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

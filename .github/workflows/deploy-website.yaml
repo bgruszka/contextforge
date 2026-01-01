@@ -1,0 +1,74 @@
+name: Deploy Website
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'website/**'
+      - '.github/workflows/deploy-website.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Setup Hugo
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: 'latest'
+          extended: true
+
+      - name: Build website
+        working-directory: website
+        run: |
+          hugo mod get -u
+          hugo --minify --baseURL "https://ctxforge.io/"
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-existing
+        continue-on-error: true
+
+      - name: Preserve Helm chart files
+        run: |
+          # Copy Helm chart repository files to Hugo output if they exist
+          if [ -d "gh-pages-existing" ]; then
+            # Copy index.yaml (Helm repo index)
+            cp gh-pages-existing/index.yaml website/public/ 2>/dev/null || true
+            # Copy chart tarballs
+            cp gh-pages-existing/*.tgz website/public/ 2>/dev/null || true
+            echo "Preserved existing Helm chart files"
+          else
+            echo "No existing gh-pages branch found, skipping preservation"
+          fi
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./website/public
+          cname: ctxforge.io
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: 'Deploy website'

@@ -1,0 +1,66 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ include "contextforge.fullname" . }}-mutating-webhook
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+  {{- if .Values.webhook.certManager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ include "contextforge.namespace" . }}/{{ include "contextforge.fullname" . }}-serving-cert
+  {{- end }}
+webhooks:
+  - name: mpod.ctxforge.io
+    clientConfig:
+      service:
+        name: {{ include "contextforge.fullname" . }}-webhook
+        namespace: {{ include "contextforge.namespace" . }}
+        path: /mutate--v1-pod
+      # caBundle will be populated by the operator at runtime
+    rules:
+      - operations: ["CREATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+    namespaceSelector:
+      matchExpressions:
+        - key: ctxforge.io/injection
+          operator: NotIn
+          values: ["disabled"]
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    timeoutSeconds: 10
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    reinvocationPolicy: Never
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "contextforge.fullname" . }}-validating-webhook
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+  {{- if .Values.webhook.certManager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ include "contextforge.namespace" . }}/{{ include "contextforge.fullname" . }}-serving-cert
+  {{- end }}
+webhooks:
+  - name: vpod.ctxforge.io
+    clientConfig:
+      service:
+        name: {{ include "contextforge.fullname" . }}-webhook
+        namespace: {{ include "contextforge.namespace" . }}
+        path: /validate--v1-pod
+      # caBundle will be populated by the operator at runtime
+    rules:
+      - operations: ["CREATE", "UPDATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+    namespaceSelector:
+      matchExpressions:
+        - key: ctxforge.io/injection
+          operator: NotIn
+          values: ["disabled"]
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    timeoutSeconds: 10
+    failurePolicy: {{ .Values.webhook.failurePolicy }}

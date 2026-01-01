@@ -7,6 +7,11 @@
 *.dll
 *.so
 *.dylib
+bin/
+/proxy
+
+# Downloaded tools
+/kubebuilder
 
 # Test binary, built with `go test -c`
 *.test
@@ -24,9 +29,27 @@ profile.cov
 go.work
 go.work.sum
 
+# Backup files
+*.backup
+
+# Planning/temporary files
+pre_plan.md
+tech_plan.md
+
 # env file
 .env
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Hugo (website)
+website/public/
+website/resources/
+website/.hugo_build.lock

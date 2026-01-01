@@ -1,0 +1,9 @@
+{{- if .Values.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "contextforge.namespace" . }}
+  labels:
+    {{- include "contextforge.labels" . | nindent 4 }}
+    ctxforge.io/injection: disabled
+{{- end }}
