@@ -610,8 +610,9 @@ func deployHeaderGenService(ctx context.Context, name string) error {
 						"ctxforge.io/enabled": "true",
 					},
 					Annotations: map[string]string{
-						"ctxforge.io/enabled":     "true",
-						"ctxforge.io/target-port": "8080",
+						"ctxforge.io/enabled":      "true",
+						"ctxforge.io/target-port":  "8080",
+						"ctxforge.io/header-rules": string(headerRulesJSON),
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -622,7 +623,6 @@ func deployHeaderGenService(ctx context.Context, name string) error {
 							Ports: []corev1.ContainerPort{{ContainerPort: 8080}},
 							Env: []corev1.EnvVar{
 								{Name: "PORT", Value: "8080"},
-								{Name: "HEADER_RULES", Value: string(headerRulesJSON)},
 							},
 						},
 					},
@@ -681,8 +681,9 @@ func deployPathFilterService(ctx context.Context, name string) error {
 						"ctxforge.io/enabled": "true",
 					},
 					Annotations: map[string]string{
-						"ctxforge.io/enabled":     "true",
-						"ctxforge.io/target-port": "8080",
+						"ctxforge.io/enabled":      "true",
+						"ctxforge.io/target-port":  "8080",
+						"ctxforge.io/header-rules": string(headerRulesJSON),
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -693,7 +694,6 @@ func deployPathFilterService(ctx context.Context, name string) error {
 							Ports: []corev1.ContainerPort{{ContainerPort: 8080}},
 							Env: []corev1.EnvVar{
 								{Name: "PORT", Value: "8080"},
-								{Name: "HEADER_RULES", Value: string(headerRulesJSON)},
 							},
 						},
 					},
@@ -751,8 +751,9 @@ func deployMethodFilterService(ctx context.Context, name string) error {
 						"ctxforge.io/enabled": "true",
 					},
 					Annotations: map[string]string{
-						"ctxforge.io/enabled":     "true",
-						"ctxforge.io/target-port": "8080",
+						"ctxforge.io/enabled":      "true",
+						"ctxforge.io/target-port":  "8080",
+						"ctxforge.io/header-rules": string(headerRulesJSON),
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -763,7 +764,6 @@ func deployMethodFilterService(ctx context.Context, name string) error {
 							Ports: []corev1.ContainerPort{{ContainerPort: 8080}},
 							Env: []corev1.EnvVar{
 								{Name: "PORT", Value: "8080"},
-								{Name: "HEADER_RULES", Value: string(headerRulesJSON)},
 							},
 						},
 					},
@@ -822,8 +822,9 @@ func deployHeaderRulesService(ctx context.Context, name string) error {
 						"ctxforge.io/enabled": "true",
 					},
 					Annotations: map[string]string{
-						"ctxforge.io/enabled":     "true",
-						"ctxforge.io/target-port": "8080",
+						"ctxforge.io/enabled":      "true",
+						"ctxforge.io/target-port":  "8080",
+						"ctxforge.io/header-rules": string(headerRulesJSON),
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -834,7 +835,6 @@ func deployHeaderRulesService(ctx context.Context, name string) error {
 							Ports: []corev1.ContainerPort{{ContainerPort: 8080}},
 							Env: []corev1.EnvVar{
 								{Name: "PORT", Value: "8080"},
-								{Name: "HEADER_RULES", Value: string(headerRulesJSON)},
 							},
 						},
 					},

@@ -216,7 +216,7 @@ func TestPodCustomDefaulter_InjectSidecar(t *testing.T) {
 	}
 
 	headers := []string{"x-request-id", "x-dev-id"}
-	defaulter.injectSidecar(pod, headers)
+	defaulter.injectSidecar(pod, headers, "")
 
 	assert.Len(t, pod.Spec.Containers, 2)
 
@@ -267,7 +267,7 @@ func TestPodCustomDefaulter_InjectSidecar_CustomTargetPort(t *testing.T) {
 		},
 	}
 
-	defaulter.injectSidecar(pod, []string{"x-request-id"})
+	defaulter.injectSidecar(pod, []string{"x-request-id"}, "")
 
 	var sidecar *corev1.Container
 	for i := range pod.Spec.Containers {
@@ -526,7 +526,7 @@ func TestPodCustomDefaulter_InjectSidecar_InvalidTargetPort(t *testing.T) {
 				},
 			}
 
-			defaulter.injectSidecar(pod, []string{"x-request-id"})
+			defaulter.injectSidecar(pod, []string{"x-request-id"}, "")
 
 			var sidecar *corev1.Container
 			for i := range pod.Spec.Containers {

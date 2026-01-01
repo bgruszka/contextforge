@@ -18,6 +18,7 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -37,8 +38,10 @@ import (
 const (
 	// AnnotationEnabled is the annotation key to enable sidecar injection
 	AnnotationEnabled = "ctxforge.io/enabled"
-	// AnnotationHeaders is the annotation key for headers to propagate
+	// AnnotationHeaders is the annotation key for headers to propagate (simple mode)
 	AnnotationHeaders = "ctxforge.io/headers"
+	// AnnotationHeaderRules is the annotation key for advanced header rules (JSON format)
+	AnnotationHeaderRules = "ctxforge.io/header-rules"
 	// AnnotationTargetPort is the annotation key for the target application port
 	AnnotationTargetPort = "ctxforge.io/target-port"
 	// AnnotationInjected marks a pod as already injected
@@ -90,8 +93,11 @@ func (d *PodCustomDefaulter) Default(_ context.Context, obj runtime.Object) erro
 	}
 
 	headers := d.extractHeaders(pod)
-	if len(headers) == 0 {
-		podlog.Info("Skipping injection: no headers specified", "pod", pod.Name)
+	headerRules := d.extractHeaderRules(pod)
+
+	// Need either headers or header-rules to inject
+	if len(headers) == 0 && headerRules == "" {
+		podlog.Info("Skipping injection: no headers or header-rules specified", "pod", pod.Name)
 		return nil
 	}
 
@@ -100,9 +106,9 @@ func (d *PodCustomDefaulter) Default(_ context.Context, obj runtime.Object) erro
 		return nil
 	}
 
-	podlog.Info("Injecting sidecar", "pod", pod.Name, "headers", headers)
+	podlog.Info("Injecting sidecar", "pod", pod.Name, "headers", headers, "hasHeaderRules", headerRules != "")
 
-	d.injectSidecar(pod, headers)
+	d.injectSidecar(pod, headers, headerRules)
 	d.modifyAppContainers(pod)
 	d.markAsInjected(pod)
 
@@ -139,6 +145,18 @@ func (d *PodCustomDefaulter) extractHeaders(pod *corev1.Pod) []string {
 	return headers
 }
 
+// extractHeaderRules extracts the header-rules annotation for advanced configuration
+func (d *PodCustomDefaulter) extractHeaderRules(pod *corev1.Pod) string {
+	if pod.Annotations == nil {
+		return ""
+	}
+	headerRules, ok := pod.Annotations[AnnotationHeaderRules]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(headerRules)
+}
+
 // isAlreadyInjected checks if the sidecar is already present
 func (d *PodCustomDefaulter) isAlreadyInjected(pod *corev1.Pod) bool {
 	if pod.Annotations != nil {
@@ -155,7 +173,7 @@ func (d *PodCustomDefaulter) isAlreadyInjected(pod *corev1.Pod) bool {
 }
 
 // injectSidecar adds the proxy container to the pod
-func (d *PodCustomDefaulter) injectSidecar(pod *corev1.Pod, headers []string) {
+func (d *PodCustomDefaulter) injectSidecar(pod *corev1.Pod, headers []string, headerRules string) {
 	targetPort := DefaultTargetPort
 	if pod.Annotations != nil {
 		if port, ok := pod.Annotations[AnnotationTargetPort]; ok && port != "" {
@@ -166,6 +184,42 @@ func (d *PodCustomDefaulter) injectSidecar(pod *corev1.Pod, headers []string) {
 				targetPort = port
 			}
 		}
+	}
+
+	// Build environment variables
+	envVars := []corev1.EnvVar{
+		{
+			Name:  "TARGET_HOST",
+			Value: fmt.Sprintf("localhost:%s", targetPort),
+		},
+		{
+			Name:  "PROXY_PORT",
+			Value: fmt.Sprintf("%d", ProxyPort),
+		},
+		{
+			Name:  "LOG_LEVEL",
+			Value: "info",
+		},
+		{
+			Name:  "LOG_FORMAT",
+			Value: "json",
+		},
+	}
+
+	// Add HEADER_RULES if specified (takes precedence for advanced config)
+	if headerRules != "" {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "HEADER_RULES",
+			Value: headerRules,
+		})
+	}
+
+	// Add HEADERS_TO_PROPAGATE if specified (simple mode, or as fallback)
+	if len(headers) > 0 {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "HEADERS_TO_PROPAGATE",
+			Value: strings.Join(headers, ","),
+		})
 	}
 
 	sidecar := corev1.Container{
@@ -179,28 +233,7 @@ func (d *PodCustomDefaulter) injectSidecar(pod *corev1.Pod, headers []string) {
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},
-		Env: []corev1.EnvVar{
-			{
-				Name:  "HEADERS_TO_PROPAGATE",
-				Value: strings.Join(headers, ","),
-			},
-			{
-				Name:  "TARGET_HOST",
-				Value: fmt.Sprintf("localhost:%s", targetPort),
-			},
-			{
-				Name:  "PROXY_PORT",
-				Value: fmt.Sprintf("%d", ProxyPort),
-			},
-			{
-				Name:  "LOG_LEVEL",
-				Value: "info",
-			},
-			{
-				Name:  "LOG_FORMAT",
-				Value: "json",
-			},
-		},
+		Env: envVars,
 		// Resource limits sized for typical API proxy workloads (~100-500 RPS per pod).
 		// Memory: 64Mi request handles Go runtime + connection pools; 256Mi limit provides headroom for traffic spikes.
 		// CPU: 50m request for baseline; 500m limit allows burst during high concurrency.
@@ -300,20 +333,32 @@ func (v *PodCustomValidator) ValidateCreate(_ context.Context, obj runtime.Objec
 
 	if enabled, ok := pod.Annotations[AnnotationEnabled]; ok && enabled == AnnotationValueTrue {
 		headersStr, hasHeaders := pod.Annotations[AnnotationHeaders]
-		if !hasHeaders || strings.TrimSpace(headersStr) == "" {
+		headerRulesStr, hasHeaderRules := pod.Annotations[AnnotationHeaderRules]
+
+		// Need either headers or header-rules
+		if (!hasHeaders || strings.TrimSpace(headersStr) == "") && (!hasHeaderRules || strings.TrimSpace(headerRulesStr) == "") {
 			return admission.Warnings{
-				"ctxforge.io/enabled is set but no headers specified in ctxforge.io/headers",
+				"ctxforge.io/enabled is set but no headers specified in ctxforge.io/headers or ctxforge.io/header-rules",
 			}, nil
 		}
 
-		// Validate header names
-		parts := strings.Split(headersStr, ",")
-		for _, part := range parts {
-			header := strings.TrimSpace(part)
-			if header != "" {
-				if err := validateHeaderName(header); err != nil {
-					return nil, fmt.Errorf("invalid header in ctxforge.io/headers annotation: %w", err)
+		// Validate header names if using simple mode
+		if hasHeaders && strings.TrimSpace(headersStr) != "" {
+			parts := strings.Split(headersStr, ",")
+			for _, part := range parts {
+				header := strings.TrimSpace(part)
+				if header != "" {
+					if err := validateHeaderName(header); err != nil {
+						return nil, fmt.Errorf("invalid header in ctxforge.io/headers annotation: %w", err)
+					}
 				}
+			}
+		}
+
+		// Validate header-rules is valid JSON if specified
+		if hasHeaderRules && strings.TrimSpace(headerRulesStr) != "" {
+			if err := validateHeaderRulesJSON(headerRulesStr); err != nil {
+				return nil, fmt.Errorf("invalid ctxforge.io/header-rules annotation: %w", err)
 			}
 		}
 	}
@@ -383,5 +428,54 @@ func validateHeaderName(name string) error {
 	if !headerNameRegex.MatchString(name) {
 		return fmt.Errorf("header name %q is invalid: must contain only alphanumeric characters and hyphens, starting with alphanumeric (e.g., x-request-id, X-Correlation-ID)", name)
 	}
+	return nil
+}
+
+// headerRule represents a single header rule for validation
+type headerRule struct {
+	Name          string   `json:"name"`
+	Generate      bool     `json:"generate,omitempty"`
+	GeneratorType string   `json:"generatorType,omitempty"`
+	Propagate     *bool    `json:"propagate,omitempty"`
+	PathRegex     string   `json:"pathRegex,omitempty"`
+	Methods       []string `json:"methods,omitempty"`
+}
+
+// validateHeaderRulesJSON validates that the header-rules annotation is valid JSON
+// and contains properly structured header rules.
+func validateHeaderRulesJSON(rulesJSON string) error {
+	var rules []headerRule
+	if err := json.Unmarshal([]byte(rulesJSON), &rules); err != nil {
+		return fmt.Errorf("invalid JSON: %w", err)
+	}
+
+	if len(rules) == 0 {
+		return fmt.Errorf("header-rules array cannot be empty")
+	}
+
+	validGeneratorTypes := map[string]bool{
+		"":          true, // empty is valid (defaults to uuid)
+		"uuid":      true,
+		"ulid":      true,
+		"timestamp": true,
+	}
+
+	for i, rule := range rules {
+		if rule.Name == "" {
+			return fmt.Errorf("rule[%d]: name is required", i)
+		}
+		if err := validateHeaderName(rule.Name); err != nil {
+			return fmt.Errorf("rule[%d]: %w", i, err)
+		}
+		if rule.Generate && !validGeneratorTypes[rule.GeneratorType] {
+			return fmt.Errorf("rule[%d]: invalid generatorType %q, must be one of: uuid, ulid, timestamp", i, rule.GeneratorType)
+		}
+		if rule.PathRegex != "" {
+			if _, err := regexp.Compile(rule.PathRegex); err != nil {
+				return fmt.Errorf("rule[%d]: invalid pathRegex %q: %w", i, rule.PathRegex, err)
+			}
+		}
+	}
+
 	return nil
 }
