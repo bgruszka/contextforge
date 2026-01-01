@@ -644,7 +644,7 @@ func deployHeaderGenService(ctx context.Context, name string) error {
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{"app": name},
 			Ports: []corev1.ServicePort{
-				{Port: 8080, TargetPort: intstr.FromInt(8080)},
+				{Port: 8080, TargetPort: intstr.FromInt(9090)}, // Route through proxy
 			},
 		},
 	}
@@ -715,7 +715,7 @@ func deployPathFilterService(ctx context.Context, name string) error {
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{"app": name},
 			Ports: []corev1.ServicePort{
-				{Port: 8080, TargetPort: intstr.FromInt(8080)},
+				{Port: 8080, TargetPort: intstr.FromInt(9090)}, // Route through proxy
 			},
 		},
 	}
@@ -785,7 +785,7 @@ func deployMethodFilterService(ctx context.Context, name string) error {
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{"app": name},
 			Ports: []corev1.ServicePort{
-				{Port: 8080, TargetPort: intstr.FromInt(8080)},
+				{Port: 8080, TargetPort: intstr.FromInt(9090)}, // Route through proxy
 			},
 		},
 	}
@@ -856,7 +856,7 @@ func deployHeaderRulesService(ctx context.Context, name string) error {
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{"app": name},
 			Ports: []corev1.ServicePort{
-				{Port: 8080, TargetPort: intstr.FromInt(8080)},
+				{Port: 8080, TargetPort: intstr.FromInt(9090)}, // Route through proxy
 			},
 		},
 	}
