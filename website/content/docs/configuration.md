@@ -17,10 +17,17 @@ ContextForge can be configured through pod annotations and the HeaderPropagation
 
 | Annotation | Default | Description |
 |------------|---------|-------------|
-| `ctxforge.io/headers` | `""` | Comma-separated list of headers to propagate |
+| `ctxforge.io/headers` | `""` | Comma-separated list of headers to propagate (simple mode) |
+| `ctxforge.io/header-rules` | `""` | JSON array of advanced header rules (see [Advanced Header Rules](#advanced-header-rules-header_rules)) |
 | `ctxforge.io/target-port` | `8080` | Port of your application container |
 
+{{% callout type="info" %}}
+Use `ctxforge.io/headers` for simple header propagation. Use `ctxforge.io/header-rules` when you need header generation, path filtering, or method filtering.
+{{% /callout %}}
+
 ### Example
+
+#### Simple Mode
 
 ```yaml
 apiVersion: apps/v1
@@ -36,6 +43,35 @@ spec:
         ctxforge.io/enabled: "true"
         ctxforge.io/headers: "x-request-id,x-tenant-id,x-correlation-id"
         ctxforge.io/target-port: "3000"
+    spec:
+      containers:
+        - name: app
+          image: my-app:latest
+          ports:
+            - containerPort: 3000
+```
+
+#### Advanced Mode (with header-rules)
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-service
+spec:
+  template:
+    metadata:
+      labels:
+        ctxforge.io/enabled: "true"
+      annotations:
+        ctxforge.io/enabled: "true"
+        ctxforge.io/target-port: "3000"
+        ctxforge.io/header-rules: |
+          [
+            {"name": "x-request-id", "generate": true, "generatorType": "uuid"},
+            {"name": "x-tenant-id"},
+            {"name": "x-debug", "pathRegex": "^/api/.*", "methods": ["POST", "PUT"]}
+          ]
     spec:
       containers:
         - name: app

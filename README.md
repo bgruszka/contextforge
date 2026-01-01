@@ -157,7 +157,8 @@ flowchart TB
 | Annotation | Description |
 |------------|-------------|
 | `ctxforge.io/enabled` | Set to `"true"` to enable sidecar injection |
-| `ctxforge.io/headers` | Comma-separated list of headers to propagate |
+| `ctxforge.io/headers` | Comma-separated list of headers to propagate (simple mode) |
+| `ctxforge.io/header-rules` | JSON array of advanced header rules (see below) |
 | `ctxforge.io/target-port` | Application port (default: `8080`) |
 
 ### HeaderPropagationPolicy CRD
