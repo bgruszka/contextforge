@@ -40,7 +40,7 @@ func TestLoad_DefaultValues(t *testing.T) {
 	assert.Equal(t, 15*time.Second, cfg.WriteTimeout)
 	assert.Equal(t, 60*time.Second, cfg.IdleTimeout)
 	assert.Equal(t, 5*time.Second, cfg.ReadHeaderTimeout)
-	assert.Equal(t, 2*time.Second, cfg.TargetDialTimeout)
+	assert.Equal(t, 5*time.Second, cfg.TargetDialTimeout)
 }
 
 func TestLoad_CustomTimeouts(t *testing.T) {
@@ -153,8 +153,40 @@ func TestParseHeaders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := parseHeaders(tt.input)
+			result, err := parseHeaders(tt.input)
+			assert.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestParseHeaders_InvalidHeaders(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "header with space",
+			input: "invalid header",
+		},
+		{
+			name:  "header starting with hyphen",
+			input: "-invalid",
+		},
+		{
+			name:  "header with special characters",
+			input: "x-request@id",
+		},
+		{
+			name:  "one valid one invalid",
+			input: "x-request-id,invalid header",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseHeaders(tt.input)
+			assert.Error(t, err)
 		})
 	}
 }

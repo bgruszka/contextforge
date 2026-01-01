@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -200,14 +201,18 @@ func (d *PodCustomDefaulter) injectSidecar(pod *corev1.Pod, headers []string) {
 				Value: "json",
 			},
 		},
+		// Resource limits sized for typical API proxy workloads (~100-500 RPS per pod).
+		// Memory: 64Mi request handles Go runtime + connection pools; 256Mi limit provides headroom for traffic spikes.
+		// CPU: 50m request for baseline; 500m limit allows burst during high concurrency.
+		// For high-traffic deployments (>1000 RPS), increase limits via Helm values or annotations.
 		Resources: corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("32Mi"),
-				corev1.ResourceCPU:    resource.MustParse("25m"),
+				corev1.ResourceMemory: resource.MustParse("64Mi"),
+				corev1.ResourceCPU:    resource.MustParse("50m"),
 			},
 			Limits: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("128Mi"),
-				corev1.ResourceCPU:    resource.MustParse("200m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+				corev1.ResourceCPU:    resource.MustParse("500m"),
 			},
 		},
 		SecurityContext: &corev1.SecurityContext{
@@ -294,11 +299,22 @@ func (v *PodCustomValidator) ValidateCreate(_ context.Context, obj runtime.Objec
 	}
 
 	if enabled, ok := pod.Annotations[AnnotationEnabled]; ok && enabled == AnnotationValueTrue {
-		headers, hasHeaders := pod.Annotations[AnnotationHeaders]
-		if !hasHeaders || strings.TrimSpace(headers) == "" {
+		headersStr, hasHeaders := pod.Annotations[AnnotationHeaders]
+		if !hasHeaders || strings.TrimSpace(headersStr) == "" {
 			return admission.Warnings{
 				"ctxforge.io/enabled is set but no headers specified in ctxforge.io/headers",
 			}, nil
+		}
+
+		// Validate header names
+		parts := strings.Split(headersStr, ",")
+		for _, part := range parts {
+			header := strings.TrimSpace(part)
+			if header != "" {
+				if err := validateHeaderName(header); err != nil {
+					return nil, fmt.Errorf("invalid header in ctxforge.io/headers annotation: %w", err)
+				}
+			}
 		}
 	}
 
@@ -346,6 +362,26 @@ func validateTargetPort(port string) error {
 	}
 	if portNum == ProxyPort {
 		return fmt.Errorf("invalid target port %d: cannot be the same as proxy port (%d)", portNum, ProxyPort)
+	}
+	return nil
+}
+
+// headerNameRegex validates HTTP header names per RFC 7230.
+// Header names must contain only alphanumeric characters and hyphens.
+var headerNameRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]*$`)
+
+// validateHeaderName checks if a header name is valid per RFC 7230.
+// Valid header names contain only alphanumeric characters and hyphens,
+// must start with an alphanumeric character, and be 1-256 characters long.
+func validateHeaderName(name string) error {
+	if len(name) == 0 {
+		return fmt.Errorf("header name cannot be empty")
+	}
+	if len(name) > 256 {
+		return fmt.Errorf("header name %q exceeds maximum length of 256 characters", name)
+	}
+	if !headerNameRegex.MatchString(name) {
+		return fmt.Errorf("header name %q is invalid: must contain only alphanumeric characters and hyphens, starting with alphanumeric (e.g., x-request-id, X-Correlation-ID)", name)
 	}
 	return nil
 }

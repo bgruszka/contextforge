@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -51,6 +52,33 @@ type ProxyConfig struct {
 	RateLimitBurst int
 }
 
+// Default timeout values with rationale:
+//
+// ReadTimeout (15s): Maximum time to read the entire request including body.
+// Set to 15s to accommodate typical API requests while preventing slow-loris attacks.
+// Adjust higher (30s-60s) for file uploads or long-polling endpoints.
+//
+// WriteTimeout (15s): Maximum time to write the response.
+// Matches ReadTimeout for symmetry. Increase for endpoints returning large responses.
+//
+// IdleTimeout (60s): Time to keep idle connections open for reuse.
+// 60s balances connection reuse benefits against resource consumption.
+// Increase for high-latency networks, decrease for memory-constrained environments.
+//
+// ReadHeaderTimeout (5s): Time to read request headers only.
+// 5s is sufficient for normal requests while protecting against slowloris attacks.
+//
+// TargetDialTimeout (5s): Time to establish connection to target application.
+// Increased from 2s to 5s to handle Kubernetes DNS resolution delays during
+// pod restarts and rolling updates. Adjust higher for cross-cluster communication.
+const (
+	defaultReadTimeout       = 15 * time.Second
+	defaultWriteTimeout      = 15 * time.Second
+	defaultIdleTimeout       = 60 * time.Second
+	defaultReadHeaderTimeout = 5 * time.Second
+	defaultTargetDialTimeout = 5 * time.Second
+)
+
 // Load reads configuration from environment variables and returns a ProxyConfig.
 // Returns an error if required configuration is missing or invalid.
 func Load() (*ProxyConfig, error) {
@@ -59,11 +87,11 @@ func Load() (*ProxyConfig, error) {
 		ProxyPort:         getEnvInt("PROXY_PORT", 9090),
 		LogLevel:          getEnv("LOG_LEVEL", "info"),
 		MetricsPort:       getEnvInt("METRICS_PORT", 9091),
-		ReadTimeout:       getEnvDuration("READ_TIMEOUT", 15*time.Second),
-		WriteTimeout:      getEnvDuration("WRITE_TIMEOUT", 15*time.Second),
-		IdleTimeout:       getEnvDuration("IDLE_TIMEOUT", 60*time.Second),
-		ReadHeaderTimeout: getEnvDuration("READ_HEADER_TIMEOUT", 5*time.Second),
-		TargetDialTimeout: getEnvDuration("TARGET_DIAL_TIMEOUT", 2*time.Second),
+		ReadTimeout:       getEnvDuration("READ_TIMEOUT", defaultReadTimeout),
+		WriteTimeout:      getEnvDuration("WRITE_TIMEOUT", defaultWriteTimeout),
+		IdleTimeout:       getEnvDuration("IDLE_TIMEOUT", defaultIdleTimeout),
+		ReadHeaderTimeout: getEnvDuration("READ_HEADER_TIMEOUT", defaultReadHeaderTimeout),
+		TargetDialTimeout: getEnvDuration("TARGET_DIAL_TIMEOUT", defaultTargetDialTimeout),
 		RateLimitEnabled:  getEnvBool("RATE_LIMIT_ENABLED", false),
 		RateLimitRPS:      getEnvFloat("RATE_LIMIT_RPS", 1000),
 		RateLimitBurst:    getEnvInt("RATE_LIMIT_BURST", 100),
@@ -74,7 +102,11 @@ func Load() (*ProxyConfig, error) {
 		return nil, fmt.Errorf("HEADERS_TO_PROPAGATE environment variable is required (e.g., HEADERS_TO_PROPAGATE=x-request-id,x-tenant-id)")
 	}
 
-	cfg.HeadersToPropagate = parseHeaders(headersStr)
+	headers, err := parseHeaders(headersStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid HEADERS_TO_PROPAGATE: %w", err)
+	}
+	cfg.HeadersToPropagate = headers
 	if len(cfg.HeadersToPropagate) == 0 {
 		return nil, fmt.Errorf("at least one header must be specified in HEADERS_TO_PROPAGATE (e.g., x-request-id,x-correlation-id)")
 	}
@@ -134,19 +166,43 @@ func (c *ProxyConfig) Validate() error {
 	return nil
 }
 
+// headerNameRegex validates HTTP header names per RFC 7230.
+// Header names must contain only alphanumeric characters and hyphens.
+var headerNameRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]*$`)
+
+// validateHeaderName checks if a header name is valid per RFC 7230.
+// Valid header names contain only alphanumeric characters and hyphens,
+// must start with an alphanumeric character, and be 1-256 characters long.
+func validateHeaderName(name string) error {
+	if len(name) == 0 {
+		return fmt.Errorf("header name cannot be empty")
+	}
+	if len(name) > 256 {
+		return fmt.Errorf("header name %q exceeds maximum length of 256 characters", name)
+	}
+	if !headerNameRegex.MatchString(name) {
+		return fmt.Errorf("header name %q is invalid: must contain only alphanumeric characters and hyphens, starting with alphanumeric (e.g., x-request-id, X-Correlation-ID)", name)
+	}
+	return nil
+}
+
 // parseHeaders splits a comma-separated header string into a slice of trimmed header names.
-func parseHeaders(input string) []string {
+// Returns an error if any header name is invalid.
+func parseHeaders(input string) ([]string, error) {
 	parts := strings.Split(input, ",")
 	headers := make([]string, 0, len(parts))
 
 	for _, part := range parts {
 		header := strings.TrimSpace(part)
 		if header != "" {
+			if err := validateHeaderName(header); err != nil {
+				return nil, err
+			}
 			headers = append(headers, header)
 		}
 	}
 
-	return headers
+	return headers, nil
 }
 
 // getEnv returns the value of an environment variable or a default value if not set.

@@ -49,13 +49,17 @@ proxy:
     tag: "0.1.0"
     pullPolicy: IfNotPresent
 
+  # Resource limits sized for typical API proxy workloads (~100-500 RPS per pod).
+  # For high-traffic deployments (>1000 RPS), increase these values.
+  # Memory: 64Mi handles Go runtime + connection pools; 256Mi limit for traffic spikes.
+  # CPU: 50m baseline; 500m limit allows burst during high concurrency.
   resources:
     requests:
-      cpu: 25m
-      memory: 32Mi
+      cpu: 50m
+      memory: 64Mi
     limits:
-      cpu: 200m
-      memory: 128Mi
+      cpu: 500m
+      memory: 256Mi
 
   # Default port the proxy listens on
   port: 9090
@@ -72,7 +76,11 @@ webhook:
   port: 9443
 
   # Failure policy: Fail or Ignore
-  failurePolicy: Fail
+  # WARNING: "Fail" means ALL pod creations will fail if the webhook is unavailable
+  # (during operator restarts, certificate issues, or network problems).
+  # Recommended: Use "Ignore" initially, switch to "Fail" only after thorough testing.
+  # With "Ignore", pods without sidecar injection will still be created if webhook fails.
+  failurePolicy: Ignore
 
   # Certificate configuration
   certManager:
