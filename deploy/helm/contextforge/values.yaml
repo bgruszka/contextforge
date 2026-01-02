@@ -7,7 +7,7 @@ operator:
 
   image:
     repository: ghcr.io/bgruszka/contextforge-operator
-    tag: "0.1.0"
+    tag: "0.1.1"
     pullPolicy: IfNotPresent
 
   imagePullSecrets: []
@@ -46,7 +46,7 @@ operator:
 proxy:
   image:
     repository: ghcr.io/bgruszka/contextforge-proxy
-    tag: "0.1.0"
+    tag: "0.1.1"
     pullPolicy: IfNotPresent
 
   # Resource limits sized for typical API proxy workloads (~100-500 RPS per pod).
