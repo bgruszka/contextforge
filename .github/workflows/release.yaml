@@ -113,7 +113,7 @@ jobs:
 
       - name: Generate changelog
         id: changelog
-        uses: orhun/git-cliff-action@v3
+        uses: orhun/git-cliff-action@v4
         with:
           config: .github/cliff.toml
           args: --latest --strip header
@@ -219,7 +219,7 @@ jobs:
           sed -i "s/tag:.*/tag: \"${VERSION}\"/" deploy/helm/contextforge/values.yaml
 
       - name: Generate full changelog for website
-        uses: orhun/git-cliff-action@v3
+        uses: orhun/git-cliff-action@v4
         with:
           config: .github/cliff.toml
           args: --strip header
