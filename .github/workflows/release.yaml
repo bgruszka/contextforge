@@ -154,10 +154,50 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  update-helm-chart:
-    name: Update Helm Chart Version
+  release-helm-chart:
+    name: Release Helm Chart
     runs-on: ubuntu-latest
     needs: [build-and-push, create-release]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Update Chart.yaml version
+        run: |
+          VERSION=${{ needs.build-and-push.outputs.version }}
+          sed -i "s/^version:.*/version: ${VERSION}/" deploy/helm/contextforge/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" deploy/helm/contextforge/Chart.yaml
+
+      - name: Update values.yaml image tags
+        run: |
+          VERSION=${{ needs.build-and-push.outputs.version }}
+          sed -i "s/tag:.*/tag: \"${VERSION}\"/" deploy/helm/contextforge/values.yaml
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: v3.13.0
+
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@v1.6.0
+        with:
+          charts_dir: deploy/helm
+          skip_existing: true
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+  update-versions:
+    name: Update Versions in Repository
+    runs-on: ubuntu-latest
+    needs: [build-and-push, release-helm-chart]
     permissions:
       contents: write
       pull-requests: write
@@ -220,7 +260,5 @@ jobs:
             - Updates Helm `Chart.yaml` version and appVersion
             - Updates Helm `values.yaml` image tags
             - Updates website changelog
-
-            Once merged, the Helm chart and website will be automatically released.
           branch: chore/release-${{ needs.build-and-push.outputs.version }}
           delete-branch: true
