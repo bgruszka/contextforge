@@ -1,12 +1,3 @@
----
-title: Changelog
-weight: 10
----
-
-All notable changes to ContextForge are documented here.
-
-This changelog is automatically updated with each release.
-
 
 ### Bug Fixes
 
